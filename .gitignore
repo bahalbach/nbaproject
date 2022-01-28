@@ -1,6 +1,7 @@
 # data
 data/
 response_data/
+aclImdb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -93,6 +94,7 @@ celerybeat-schedule
 # Environments
 .env
 .venv
+.venv39
 env/
 venv/
 ENV/
@@ -102,6 +104,9 @@ venv.bak/
 # Spyder project settings
 .spyderproject
 .spyproject
+
+# vscode settings
+.vscode
 
 # Rope project settings
 .ropeproject
@@ -116,3 +121,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
