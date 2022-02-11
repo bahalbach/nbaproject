@@ -2,6 +2,7 @@
 data/
 response_data/
 aclImdb
+tftutorials/sizes/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
