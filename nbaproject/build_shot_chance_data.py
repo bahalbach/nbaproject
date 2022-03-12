@@ -1813,24 +1813,29 @@ def process_game(game):
                     next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
 
                 elif event.is_shot_clock_violation:
-                    for cte in event.get_all_events_at_current_time():
-                        if (isinstance(cte, enhanced_pbp.Rebound) and not cte.is_real_rebound) or (isinstance(cte, enhanced_pbp.FieldGoal) and not cte.is_made):
-                            # if event.team_id != cte.team_id:
-                            #     continue
-                            # add this as a rebound result, not a try result
-                            if game_events[-1].event_type == EventType.Rebound:
-                                game_events[-1].rebound_result = ReboundResult.SHOTCLOCK_TURNOVER
-                            else:
-                                rebound_result_type = ReboundResult.SHOTCLOCK_TURNOVER
-                                has_rebound = True
-
+                    last_event = game_events[-1]
+                    if last_event.event_type == EventType.Rebound and last_event.period_time_left == period_time_left:
+                        if game_events[-2].lineup.offense_team == event.team_id:
+                            game_events[-1].rebound_result = ReboundResult.SHOTCLOCK_TURNOVER
                             try_start = TryStart(
                                 TryStartType.DEAD_BALL_TURNOVER, period_time_left)
-                            break
+                        else:
+                            # time way off, try to move to appropriate time
+                            period_time_left = max(
+                                seconds_from_time(event.next_event.clock),
+                                period_time_left - 24)
+                            try_result.result_type = TryResultType.SHOT_CLOCK_TURNOVER
+                            has_off_try_result = True
+                            next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
+
+                    elif is_reboundable(last_event):
+                        rebound_result_type = ReboundResult.SHOTCLOCK_TURNOVER
+                        has_rebound = True
+                        try_start = TryStart(
+                            TryStartType.DEAD_BALL_TURNOVER, period_time_left)
                     else:
                         try_result.result_type = TryResultType.SHOT_CLOCK_TURNOVER
                         has_off_try_result = True
-
                         next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
 
                 elif event.is_offensive_goaltending:
