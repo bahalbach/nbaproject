@@ -1393,10 +1393,16 @@ def process_game(game):
                                 print("wrong team lftv", event)
                             game_events[-2].ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
                             game_events.pop()
+                        elif isinstance(rebound, enhanced_pbp.FreeThrow) and rebound.is_made and rebound.clock == event.clock and game_events[-1].event_type == EventType.LiveFreeThrow:
+                            if event.team_id == rebound.team_id:
+                                print("wrong team lftv2", event)
+                            game_events[-1].ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_MAKE
                         else:
                             print("unhandled non ft lane violation", event)
                             print(possession.events)
                             raise Exception(possession, game_events)
+                    else:
+                        print("lane violation with just techs", event)
                     # def 3 seconds handled in foul
                     continue
 
