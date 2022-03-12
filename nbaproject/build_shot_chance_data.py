@@ -1865,10 +1865,10 @@ def process_game(game):
                         next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
 
                 elif event.is_lane_violation:
-                    try_start = TryStart(
-                        TryStartType.DEAD_BALL_TURNOVER, period_time_left)
-
                     if expected_fts - expected_tfts != 0:
+                        try_start = TryStart(
+                            TryStartType.DEAD_BALL_TURNOVER, period_time_left)
+
                         live_free_throw = current_game_event
                         live_free_throw.event_type = EventType.LiveFreeThrow
                         live_free_throw.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
@@ -1881,9 +1881,12 @@ def process_game(game):
                         game_events.append(live_free_throw)
                         continue
                     else:
-                        print("unhandled lanee violation turnover", event)
-                        print(possession.events)
-                        raise Exception(possession, game_events)
+                        if event.previous_event.clock == event.clock:
+                            print("really off 3sec?", event)
+                        has_off_try_result = True
+                        try_result.result_player1_id = event.player1_id
+                        try_result.result_type = TryResultType.OFF_3SECONDS_TURNOVER
+                        next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
 
                 else:
                     print("unhandled turnover")
