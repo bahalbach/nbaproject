@@ -580,38 +580,38 @@ def process_game(game):
                     goaltended = False
                     goaltender = None
 
-                if expected_fts <= 0:
-                    # check if the foul is out of order ahead of this free throw
-                    next_event = event.next_event
-                    if event.is_technical_ft:
-                        while next_event and next_event.clock == event.clock:
-                            if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical:
-                                out_of_order_tech_foul = True
-                                expected_fts += 1
-                                expected_tfts += 1
-                                break
-                            next_event = next_event.next_event
+                next_event = event.next_event
+                if expected_tfts <= 0 and event.is_technical_ft:
+                    while next_event and next_event.clock == event.clock:
+                        if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical:
+                            out_of_order_tech_foul = True
+                            expected_fts += 1
+                            expected_tfts += 1
+                            break
+                        next_event = next_event.next_event
+                    else:
+                        if missing_delay_of_game_tech:
+                            expected_fts += 1
                         else:
                             print("No expected free throws and no tech", event)
                             raise Exception(possession, game_events)
-                    else:
-                        foul = event.foul_that_led_to_ft
-                        while next_event and next_event.clock == event.clock:
-                            if foul is next_event:
-                                foul_after_fts = foul
-                                break
-                            next_event = next_event.next_event
-                        else:
-                            foul_after_fts = None
+                if expected_fts <= 0:
+                    # check if the foul is out of order ahead of this free throw
 
-                        if foul_after_fts is not None:
-                            expected_fts += get_num_fta_from_foul(foul)
-                        else:
-                            if missing_delay_of_game_tech:
-                                expected_fts += 1
-                            else:
-                                print("No expected free throws", event)
-                                raise Exception(possession, game_events)
+                    foul = event.foul_that_led_to_ft
+                    while next_event and next_event.clock == event.clock:
+                        if foul is next_event:
+                            foul_after_fts = foul
+                            break
+                        next_event = next_event.next_event
+                    else:
+                        foul_after_fts = None
+
+                    if foul_after_fts is not None:
+                        expected_fts += get_num_fta_from_foul(foul)
+                    else:
+                        print("No expected free throws", event)
+                        raise Exception(possession, game_events)
                 expected_fts -= 1
 
                 # catch team/coach techs
@@ -1432,7 +1432,12 @@ def process_game(game):
                             print(possession.events)
                             raise Exception(possession, game_events)
                     else:
-                        print("lane violation with just techs", event)
+                        print("lane violation with just techs",
+                              event, "not sure what this means")
+
+                        # print(possession.events)
+                        # raise Exception(possession, game_events)
+
                     # def 3 seconds handled in foul
                     continue
 
