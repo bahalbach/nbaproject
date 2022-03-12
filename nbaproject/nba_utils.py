@@ -5,6 +5,16 @@ import unidecode
 from nba_api.stats.static.teams import find_team_name_by_id, get_teams
 
 
+# %% test print
+VERSION = 2
+
+
+def print_version():
+    print(VERSION)
+
+# %%
+
+
 def seconds_from_time(time: str) -> int:
     """
     Return the amount of seconds represented by str time

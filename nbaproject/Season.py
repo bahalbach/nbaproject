@@ -35,59 +35,6 @@ game_possessions_settings = {
 }
 
 
-# ShotData = namedtuple("Shot", ["is_made", "is_and1", "is_blocked",
-#                                "player_id", "shot_type", "lineup"])
-# shot_type_value = {"AtRim": 0, "ShortMidRange": 1,
-#                    "LongMidRange": 2, "Arc3": 3,  "Corner3": 4, "FreeThrowNR": 5, "FreeThrowR": 6}
-
-# Lineup = namedtuple(
-#     'Lineup', 'off_team, off_players, def_team, def_players')
-
-
-# def lineup_from_off_event(event):
-#     off_team = event.team_id
-#     for team, players in event.current_players.items():
-#         if off_team == team:
-#             off_players = players
-#         else:
-#             def_players = players
-#     return LineupPlayers(off_players, def_players)
-
-# class LineupStats:
-#     def __init__(self):
-#         self.possessions = 0
-#         self.points = 0
-#         self.shot_points = 0
-
-#         # (shot_type, shooter): (num_shots, oreb_chances, orebs
-#         self.shots: defaultdict[tuple[int, int],
-#                                 ShotStats] = defaultdict(ShotStats)
-
-#     def add_possession(self, points, shot_points):
-#         self.possessions += 1
-#         self.points += points
-#         self.shot_points += shot_points
-
-#     def expected_points(self, player_seasons):
-#         exp_p = 0
-#         for (shot_type, shooter), stats in self.shots.items():
-#             shot_value = 2
-#             if shot_type >= 3:
-#                 shot_value = 3
-#             if shot_type == 5:
-#                 shot_value = 1
-#             exp_p += player_seasons[shooter].shot_chance(
-#                 shot_type) * stats.num_shots * shot_value
-#         return self.points - self.shot_points + exp_p
-#         # expected_misses * orebs / oreb_chances = expected_orebs
-
-#     # def rebound_chance(self, shot: tuple[int, int]):
-#     #     stats: ShotStats = self.shots(shot)
-#     #     if stats.orebs == 0:
-#     #         return 0
-#     #     else:
-#     #         return stats.orebs / stats.oreb_chances
-
 class PlayerContribution:
     """
     Measure how much a player contributes to a teams season
@@ -220,37 +167,115 @@ class TeamSeason:
 
 
 class PlayerSeason:
-    def __init__(self, player_id: int) -> None:
+    def __init__(self, player_id: int, name: str) -> None:
         self.id: int = player_id
+        self.name = name
         self.player_contributions: dict[int, PlayerContribution] = {}
+        self.games = 0
+        self.wins = 0
+        self.start_G = 0
+        self.start_F = 0
+        self.start_C = 0
+        self.game_time = 0
+        self.total_pm = 0
+
+        self.points = 0
+        self.fg2a = 0
+        self.fg2m = 0
+        self.fg3a = 0
+        self.fg3m = 0
+        self.fta = 0
+        self.ftm = 0
+
+        self.off_rebounds = 0
+        self.def_rebounds = 0
+        self.assists = 0
+        self.blocks = 0
+        self.steals = 0
+
+        self.turnovers = 0
+        self.fouls = 0
         # self.shots = [0, 0, 0, 0, 0, 0]
         # self.makes = [0, 0, 0, 0, 0, 0]
 
+    def add_player_contribution(self, team_id, player_contribution):
+        self.player_contributions[team_id] = player_contribution
+        self.games += player_contribution.games
+        self.wins += player_contribution.wins
+        self.start_G += player_contribution.start_G
+        self.start_F += player_contribution.start_F
+        self.start_C += player_contribution.start_C
+        self.game_time += player_contribution.game_time
+        self.total_pm += player_contribution.total_pm
+
+        self.points += player_contribution.points
+        self.fg2a += player_contribution.fg2a
+        self.fg2m += player_contribution.fg2m
+        self.fg3a += player_contribution.fg3a
+        self.fg3m += player_contribution.fg3m
+        self.fta += player_contribution.fta
+        self.ftm += player_contribution.ftm
+
+        self.off_rebounds += player_contribution.off_rebounds
+        self.def_rebounds += player_contribution.def_rebounds
+        self.assists += player_contribution.assists
+        self.blocks += player_contribution.blocks
+        self.steals += player_contribution.steals
+
+        self.turnovers += player_contribution.turnovers
+        self.fouls += player_contribution.fouls
+
+    def get_stats(self):
+        mins = self.game_time / 60.0
+        stats = []
+        stats.append(self.total_pm / mins)
+
+        stats.append(self.points / mins)
+        stats.append(self.fg2a / mins)
+        stats.append(self.fg2m / (self.fg2a if self.fg2a else 1))
+        stats.append(self.fg2m / mins)
+        stats.append(self.fg3a / mins)
+        stats.append(self.fg3m / (self.fg3a if self.fg3a else 1))
+        stats.append(self.fg3m / mins)
+        stats.append(self.fta / mins)
+        stats.append(self.ftm / (self.fta if self.fta else 1))
+        stats.append(self.ftm / mins)
+
+        stats.append(self.off_rebounds / mins)
+        stats.append(self.def_rebounds / mins)
+        stats.append(self.assists / mins)
+        stats.append(self.blocks / mins)
+        stats.append(self.steals / mins)
+
+        stats.append(self.turnovers / mins)
+        stats.append(self.fouls / mins)
+        return stats
     # def __getattr__(self, name):
     #     val = 0
     #     for pc in self.player_contributions.values():
     #         val += getattr(pc, name)
     #     return val
-    @property
-    def points(self):
-        points = 0
-        for pc in self.player_contributions.values():
-            points += pc.points
-        return points
 
-    @property
-    def games(self):
-        games = 0
-        for pc in self.player_contributions.values():
-            games += pc.games
-        return games
+    # @property
+    # def points(self):
+    #     points = 0
+    #     for pc in self.player_contributions.values():
+    #         points += pc.points
+    #     return points
 
-    @property
-    def game_time(self):
-        game_time = 0
-        for pc in self.player_contributions.values():
-            game_time += pc.game_time
-        return game_time
+    # @property
+    # def games(self):
+    #     games = 0
+    #     for pc in self.player_contributions.values():
+    #         games += pc.games
+    #     return games
+
+    # @property
+    # def game_time(self):
+    #     game_time = 0
+    #     for pc in self.player_contributions.values():
+    #         game_time += pc.game_time
+    #     return game_time
 
     # def add_shot(self, shot: ShotData):
     #     self.shots[shot.shot_type] += 1
@@ -628,13 +653,32 @@ class Season:
         return url
 
     def build_player_seasons(self):
+        self.player_seasons = {}
         for team_season in self.team_seasons.values():
             team_id = team_season.id
             for player_contribution in team_season.player_contributions.values():
                 player_id = player_contribution.id
+
                 if player_id not in self.player_seasons:
-                    self.player_seasons[player_id] = PlayerSeason(player_id)
-                self.player_seasons[player_id].player_contributions[team_id] = player_contribution
+                    name = team_season.roster[team_season.roster.id == player_id].name.item(
+                    )
+                    self.player_seasons[player_id] = PlayerSeason(
+                        player_id, name)
+                self.player_seasons[player_id].add_player_contribution(
+                    team_id, player_contribution)
+
+    def build_shot_chance_data(self):
+        possession_client = Client(game_possessions_settings)
+        for game_dict in self.schedule.games.final_games:
+            game_id = game_dict['game_id']
+            game = possession_client.Game(game_id)
+            possessions = game.possessions.items
+
+            home_team = game.boxscore.team_items[0]['team_id']
+            home_team_wr = self.team_seasons[home_team].current_wr
+            road_team = game.boxscore.team_items[1]['team_id']
+            road_team_wr = self.team_seasons[road_team].current_wr
+            is_home_win = game.boxscore.team_items[0]['plus_minus'] > 0
 
     # def load_possessions(self, load_shots=True):
     #     print("Loading possessions", datetime.now().time())

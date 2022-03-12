@@ -3,6 +3,8 @@ data/
 response_data/
 aclImdb
 tftutorials/sizes/
+tftutorials/my_dir/
+nbaproject/my_logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

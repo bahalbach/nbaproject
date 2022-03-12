@@ -13,8 +13,8 @@ from nba_api.stats.static.players import find_player_by_id
 
 
 from nba_utils import seasons, seconds_from_time
-from nba_dataclasses import PlayerInfo
-from Season import Season
+from nba_dataclasses import PlayerInfo, LineupPlayers, LineupStats, Lineup, ShotStats, Shot, Game, PossessionInfo
+from Season import Season, TeamSeason, PlayerContribution, PlayerSeason
 
 
 MOMENTUM = 0.9
