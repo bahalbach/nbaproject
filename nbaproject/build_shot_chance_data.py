@@ -88,11 +88,11 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
     #     event = event.next_event
     possession_after = foul.is_loose_ball_foul or foul.is_flagrant
     number_of_fta_for_foul = 0
+    total_fts = 0
     flagrant_fts = 0
     last_ft_is_miss = False
     # other_number_of_fta_for_foul = 0
     seen_ft = 0
-    max_fts = 2 if foul.is_flagrant else 3
     while event and event.clock == clock:
         # matches_player = (foul.is_inbound_foul or foul.is_away_from_play_foul or not hasattr(foul, "player3_id")
         #                   or foul.player3_id == event.player1_id)
@@ -101,7 +101,8 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
             break
         elif event.event_type == 6 and event.is_flagrant:
             # when there's a flagrant at the same time, get
-            flagrant_fts = get_num_fta_from_foul(event)
+            total_fts = get_num_fta_from_foul(event)
+            flagrant_fts = get_num_flagrant_fts(event)
             # print("flagrant fts", flagrant_fts)
         # 3 = free throw
         elif event.event_type == 3:
@@ -157,7 +158,7 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
         pass
         # if event and event.event_type == 5 and event.is_offensive_goaltending and event.team_id != foul.team_id and not possession_after:
         #     seen_ft += 1
-    if max(number_of_fta_for_foul, seen_ft, flagrant_fts-2) == 0:
+    if max(number_of_fta_for_foul, seen_ft, total_fts-flagrant_fts) == 0:
         event = foul.previous_event
         while event and event.clock == clock:
             # matches_player = (foul.is_inbound_foul or foul.is_away_from_play_foul or not hasattr(foul, "player3_id")
@@ -166,7 +167,8 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
                 break
             elif event.event_type == 6 and event.is_flagrant:
                 # when there's a flagrant at the same time, get
-                flagrant_fts = get_num_fta_from_foul(event)
+                total_fts = get_num_fta_from_foul(event)
+                flagrant_fts = get_num_flagrant_fts(event)
             elif event.event_type == 3:
                 if event.is_technical_ft:
                     pass
@@ -200,7 +202,18 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
                     # print("ft not right")
                     # raise Exception()
             event = event.previous_event
-    return max(number_of_fta_for_foul, seen_ft, flagrant_fts-2)
+    return max(number_of_fta_for_foul, seen_ft, total_fts - flagrant_fts)
+
+
+def get_num_flagrant_fts(foul):
+    clock = foul.clock
+    event = foul.next_event
+    number_of_fta_for_foul = 0
+    while event and event.clock == clock:
+        if event.event_type == 3 and event.is_flagrant_ft:
+            number_of_fta_for_foul = event.num_ft_for_trip
+        event = event.next_event
+    return number_of_fta_for_foul
 
 
 """
@@ -670,6 +683,12 @@ def process_game(game):
 
                 if event.is_flagrant:
                     number_of_fta_for_foul = min(number_of_fta_for_foul, 2)
+                    num_flagrant_fts = get_num_flagrant_fts(event)
+                    number_of_fta_for_foul = max(
+                        number_of_fta_for_foul, num_flagrant_fts)
+
+                logging.debug(
+                    f"foul {event.event_num} with {number_of_fta_for_foul} fts")
 
                 tmp_foul_after_fts = foul_after_fts is not None
                 if foul_after_fts is event:
@@ -683,10 +702,12 @@ def process_game(game):
                     if seperate_double_technical:
                         seperate_double_technical = False
                         continue
+
                     next_event = event.next_event
                     if isinstance(next_event, enhanced_pbp.Replay):
                         next_event = next_event.next_event
-                    if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical and event.team_id != next_event.team_id:
+                    different_teams = next_event.team_id == road_team if event.team_id == home_team else next_event.team_id == home_team
+                    if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical and different_teams:
                         # actually a double technical
                         double_techs[0].append(fouler)
                         double_techs[1].append(next_event.player1_id)
@@ -702,7 +723,7 @@ def process_game(game):
                             technicals[event.team_id][event.player1_id] += 1
                         else:
                             technicals[event.team_id][event.player1_id] = 1
-                        continue
+                    continue
                 elif event.is_double_technical:
                     double_techs[0].append(fouler)
                     double_techs[1].append(fouled)
