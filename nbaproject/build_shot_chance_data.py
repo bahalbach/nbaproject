@@ -1028,13 +1028,19 @@ def process_game(game):
                         raise Exception(possession, game_events)
 
                 elif event.is_personal_take_foul:
+                    has_def_try_result = True
+
                     if event.is_penalty_event():
                         result_type = TryResultType.PENALTY_TAKE_FOUL
                         if number_of_fta_for_foul != 2:
                             print("w fts", number_of_fta_for_foul, event)
-                            print("treat as missed foul")
-                            result_type = TryResultType.MISSED_FOUL
-                            next_try_start.start_type = TryStartType.AFTER_FOUL
+                            print("just ignore missed foul")
+                            has_def_try_result = False
+                            try_start = TryStart(
+                                TryStartType.AFTER_FOUL, period_time_left)
+                            # result_type = TryResultType.MISSED_FOUL
+                            # next_try_start.start_type = TryStartType.AFTER_FOUL
+
                     else:
                         if number_of_fta_for_foul == 0:
                             result_type = TryResultType.TAKE_FOUL
@@ -1048,7 +1054,6 @@ def process_game(game):
                     try_result.result_player1_id = fouler
                     try_result.result_player2_id = fouled
                     try_result.num_fts = number_of_fta_for_foul
-                    has_def_try_result = True
 
                 elif event.is_offensive_foul or event.is_charge:
                     if event.is_flagrant:
@@ -1769,8 +1774,8 @@ def process_game(game):
                 elif event.is_shot_clock_violation:
                     for cte in event.get_all_events_at_current_time():
                         if (isinstance(cte, enhanced_pbp.Rebound) and not cte.is_real_rebound) or (isinstance(cte, enhanced_pbp.FieldGoal) and not cte.is_made):
-                            if event.team_id != cte.team_id:
-                                continue
+                            # if event.team_id != cte.team_id:
+                            #     continue
                             # add this as a rebound result, not a try result
                             if game_events[-1].event_type == EventType.Rebound:
                                 game_events[-1].rebound_result = ReboundResult.SHOTCLOCK_TURNOVER
