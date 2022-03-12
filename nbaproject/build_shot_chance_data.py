@@ -719,7 +719,9 @@ def process_game(game):
                     next_event = event.next_event
                     if isinstance(next_event, enhanced_pbp.Replay):
                         next_event = next_event.next_event
-                    different_teams = next_event.team_id == road_team if event.team_id == home_team else next_event.team_id == home_team
+                    different_teams = (
+                        (next_event.team_id == road_team and event.team_id == home_team) or
+                        (next_event.team_id == home_team and event.team_id == road_team))
                     if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical and different_teams:
                         # actually a double technical
                         double_techs[0].append(fouler)
