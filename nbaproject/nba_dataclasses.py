@@ -441,6 +441,47 @@ live_ft_ft_results = {
     LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
 }
 
+has_offensive_fts_results = same_team_live_free_throw_results | {
+    TryResultType.FLAGRANT_AND_FOUL,
+    TryResultType.FLAGRANT_AND_FOUL_1FT,
+    TryResultType.FLAGRANT1_AND1,
+    TryResultType.FLAGRANT2_AND1,
+    TryResultType.FLAGRANT1_AND1_2FTS,
+    TryResultType.MADE_BASKET_W_FLAGRANT1,
+    TryResultType.MADE_BASKET_W_FLAGRANT2,
+    TryResultType.AWAY_FROM_PLAY_FOUL,
+    TryResultType.DEF_LOOSE_BALL_FOUL,
+    TryResultType.INBOUND_FOUL,
+    TryResultType.CLEAR_PATH_FOUL,
+    TryResultType.FLAGRANT1,
+    TryResultType.FLAGRANT2,
+}
+
+has_offensive_fts_rb_results = {
+    ReboundResult.LBF_OREB,
+    ReboundResult.LBF_2FT_OREB,
+}
+
+has_offensive_fts_ft_results = {
+    LiveFreeThrowResult.MADE_AND_FLAGRANT1,
+    LiveFreeThrowResult.MADE_AND_FLAGRANT2,
+    LiveFreeThrowResult.MADE_AND_FOUL,
+    LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY,
+    LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
+}
+
+has_defensive_fts_results = other_team_live_free_throw_results | {
+    TryResultType.OFF_AWAY_FROM_PLAY_FOUL,
+    TryResultType.OFF_LOOSE_BALL_FOUL,
+    TryResultType.OFFENSIVE_FLAGRANT1,
+    TryResultType.OFFENSIVE_FLAGRANT2,
+}
+
+has_defensive_fts_rb_results = {
+    ReboundResult.LBF_DREB,
+    ReboundResult.LBF_2FT_DREB,
+}
+
 
 class EventType(Enum):
     StartOfPeriod = 0
@@ -513,6 +554,54 @@ def is_reboundable(game_event: GameEvent):
     return False
 
 
+def get_ft_team(game_event: GameEvent):
+    if game_event.event_type == EventType.PossessionTry:
+        if game_event.try_result.result_type in has_offensive_fts_results:
+            return game_event.lineup.offense_team
+        elif game_event.try_result.result_type in has_defensive_fts_results:
+            return game_event.lineup.defense_team
+        else:
+            print("no fts")
+    if game_event.event_type == EventType.LiveFreeThrow:
+        if game_event.ft_result in has_offensive_fts_ft_results:
+            return game_event.lineup.offense_team
+        # elif game_event.ft_result in has_defensive_fts_ft_results:
+        #     return game_event.lineup.defense_team
+        else:
+            print("no fts")
+    if game_event.event_type == EventType.Rebound:
+        if game_event.rebound_result in has_offensive_fts_rb_results:
+            return game_event.lineup.offense_team
+        elif game_event.rebound_result in has_defensive_fts_rb_results:
+            return game_event.lineup.offense_team
+        else:
+            print("no fts")
+    if game_event.event_type == EventType.JumpBall:
+        if game_event.jumpball_result == JumpballResultType.LOOSE_BALL_FOUL:
+            return game_event.winning_team
+        else:
+            print("no fts")
+# def expected_offense_team(game_events: list[GameEvent], home_team, road_team):
+#     last_event = game_events[-1]
+#     if last_event.event_type == EventType.PossessionTry:
+#         if last_event in reboundable_results | jump_ball_results:
+#             print("unknown offensive team")
+#         if last_event in same_team_results | same_team_live_free_throw_results:
+#             same_team = True
+#         else:
+#             same_team = False
+#     if last_event.event_type == EventType.LiveFreeThrow:
+#         if last_event in same_team_ft_results | live_ft_ft_results:
+#             same_team = True
+#         else:
+#             same_team = False
+
+#     if same_team:
+#         return home_team if last_event.lineup.offense_team == home_team else road_team
+#     else:
+#         return home_team if last_event.lineup.offense_team != home_team else road_team
+
+
 def is_last_event_correct(game_events: list[GameEvent]):
     if len(game_events) <= 1:
         return True
@@ -526,6 +615,10 @@ def is_last_event_correct(game_events: list[GameEvent]):
         raise Exception(game_events)
     if last_event.event_type is EventType.StartOfPeriod or following_event.event_type is EventType.StartOfPeriod:
         return True
+
+    if (following_event.event_type is EventType.Rebound):
+        if last_event.lineup.offense_team != following_event.lineup.offense_team:
+            return False
 
     if (last_event.event_type is EventType.JumpBall):
         if last_event.jumpball_result == JumpballResultType.NORMAL:

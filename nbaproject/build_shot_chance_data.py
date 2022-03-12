@@ -9,7 +9,7 @@ from nba import NbaTracker
 from pbpstats.client import Client
 from pbpstats.resources import enhanced_pbp
 
-from nba_dataclasses import get_foul_lineup, GameEvent, EventType, LiveFreeThrow, LiveFreeThrowResult, JumpBall, is_reboundable, is_last_event_correct, JumpballResultType
+from nba_dataclasses import get_foul_lineup, GameEvent, EventType, LiveFreeThrow, LiveFreeThrowResult, JumpBall, is_reboundable, is_last_event_correct, JumpballResultType, get_ft_team
 
 
 def get_player_names(event):
@@ -425,13 +425,6 @@ def process_game(game):
 
             has_out_of_order_live_free_throw = False
 
-            lineup = get_foul_lineup(event, offense_team_id)
-            offense_is_home = offense_team_id == home_team
-            fouls_to_give = event.fouls_to_give[defense_team_id]
-            in_penalty = event.is_penalty_event()
-            current_game_event = GameEvent(
-                lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, None)
-
             if isinstance(event, enhanced_pbp.FieldGoal):
                 goaltended = False
                 if goaltend_before_shot:
@@ -645,12 +638,18 @@ def process_game(game):
                         possession_after = False
                     else:
                         event.is_reboundable = True
-                        if lineup.offense_team != event.team_id:
+                        if offense_team_id != event.team_id:
                             print("wrong offense team for ft", event)
                             print(possession.events)
                             raise Exception(possession, game_events)
-                        live_free_throw = current_game_event
-                        live_free_throw.event_type = EventType.LiveFreeThrow
+
+                        lineup = get_foul_lineup(event, offense_team_id)
+                        offense_is_home = offense_team_id == home_team
+                        fouls_to_give = event.fouls_to_give[defense_team_id]
+                        in_penalty = fouls_to_give == 0
+                        live_free_throw = GameEvent(
+                            lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.LiveFreeThrow)
+
                         live_free_throw.shooter = event.player1_id
                         live_free_throw.goaltender = goaltender
                         live_free_throw.fouler = None
@@ -695,10 +694,11 @@ def process_game(game):
                 number_of_fta_for_foul = get_num_fta_from_foul(event)
 
                 if event.is_flagrant:
-                    number_of_fta_for_foul = min(number_of_fta_for_foul, 2)
                     num_flagrant_fts = get_num_flagrant_fts(event)
-                    number_of_fta_for_foul = max(
-                        number_of_fta_for_foul, num_flagrant_fts)
+                    if num_flagrant_fts == 0:
+                        number_of_fta_for_foul = min(number_of_fta_for_foul, 2)
+                    else:
+                        number_of_fta_for_foul = num_flagrant_fts
 
                 logging.debug(
                     f"foul {event.event_num} with {number_of_fta_for_foul} fts")
@@ -895,7 +895,7 @@ def process_game(game):
                         possession_after = True
                         next_try_start.start_type = TryStartType.AFTER_FOUL
                         if next_event.team_id == event.team_id:
-                            if number_of_fta_for_foul == 1:
+                            if get_num_flagrant_fts(next_event) == 1:
                                 result_type = TryResultType.FLAGRANT_AND_FOUL_1FT
                             else:
                                 result_type = TryResultType.FLAGRANT_AND_FOUL
@@ -1379,8 +1379,17 @@ def process_game(game):
                                 pass
                             continue
 
-                        live_free_throw = current_game_event
-                        live_free_throw.event_type = EventType.LiveFreeThrow
+                        ft_team = get_ft_team(game_events[-1])
+                        non_ft_team = road_team if ft_team == home_team else home_team
+
+                        lineup = get_foul_lineup(event, ft_team)
+                        offense_is_home = ft_team == home_team
+                        fouls_to_give = event.fouls_to_give[non_ft_team]
+                        in_penalty = fouls_to_give == 0
+
+                        live_free_throw = GameEvent(
+                            lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.LiveFreeThrow)
+
                         live_free_throw.shooter = find_free_throw_shooter(
                             event)
                         live_free_throw.goaltender = None
@@ -1388,8 +1397,8 @@ def process_game(game):
                         live_free_throw.fouled = None
 
                         next_event = event.next_event
-                        if event.team_id != offense_team_id or next_event.clock == event.clock and (isinstance(next_event, enhanced_pbp.FreeThrow) or (isinstance(next_event, enhanced_pbp.Violation) and (next_event.is_lane_violation or next_event.is_double_lane_violation)) or (event.team_id != offense_team_id and isinstance(next_event, enhanced_pbp.Turnover) and next_event.is_lane_violation)):
-                            if event.team_id == offense_team_id:
+                        if event.team_id != ft_team or next_event.clock == event.clock and (isinstance(next_event, enhanced_pbp.FreeThrow) or (isinstance(next_event, enhanced_pbp.Violation) and (next_event.is_lane_violation or next_event.is_double_lane_violation)) or (event.team_id != ft_team and isinstance(next_event, enhanced_pbp.Turnover) and next_event.is_lane_violation)):
+                            if event.team_id == ft_team:
                                 live_free_throw.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
                             else:
                                 live_free_throw.ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY
@@ -1448,11 +1457,22 @@ def process_game(game):
                             pass
                         continue
 
-                    live_free_throw = current_game_event
-                    live_free_throw.event_type = EventType.LiveFreeThrow
-                    shooter = find_free_throw_shooter(event)
-                    live_free_throw.shooter = shooter
+                    ft_team = get_ft_team(game_events[-1])
+                    non_ft_team = road_team if ft_team == home_team else home_team
+
+                    lineup = get_foul_lineup(event, ft_team)
+                    offense_is_home = ft_team == home_team
+                    fouls_to_give = event.fouls_to_give[non_ft_team]
+                    in_penalty = fouls_to_give == 0
+
+                    live_free_throw = GameEvent(
+                        lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.LiveFreeThrow)
+
+                    live_free_throw.shooter = find_free_throw_shooter(
+                        event)
                     live_free_throw.goaltender = None
+                    live_free_throw.fouler = event.player1_id
+                    live_free_throw.fouled = None
 
                     next_event = event.next_event
                     if next_event.clock == event.clock and (isinstance(next_event, enhanced_pbp.FreeThrow) or (isinstance(next_event, enhanced_pbp.Violation) and next_event.is_lane_violation)):
@@ -1823,8 +1843,15 @@ def process_game(game):
                     if is_free_throw:
                         try_start = TryStart(
                             TryStartType.DEAD_BALL_TURNOVER, period_time_left)
-                        live_free_throw = current_game_event
-                        live_free_throw.event_type = EventType.LiveFreeThrow
+
+                        lineup = get_foul_lineup(event, offense_team_id)
+                        offense_is_home = offense_team_id == home_team
+                        fouls_to_give = event.fouls_to_give[defense_team_id]
+                        in_penalty = fouls_to_give == 0
+
+                        live_free_throw = GameEvent(
+                            lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.LiveFreeThrow)
+
                         live_free_throw.ft_result = LiveFreeThrowResult.OFF_GOALTEND_TURNOVER
                         live_free_throw.shooter = find_free_throw_shooter(
                             event)
@@ -1885,8 +1912,14 @@ def process_game(game):
                         try_start = TryStart(
                             TryStartType.DEAD_BALL_TURNOVER, period_time_left)
 
-                        live_free_throw = current_game_event
-                        live_free_throw.event_type = EventType.LiveFreeThrow
+                        lineup = get_foul_lineup(event, offense_team_id)
+                        offense_is_home = offense_team_id == home_team
+                        fouls_to_give = event.fouls_to_give[defense_team_id]
+                        in_penalty = fouls_to_give == 0
+
+                        live_free_throw = GameEvent(
+                            lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.LiveFreeThrow)
+
                         live_free_throw.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
                         live_free_throw.shooter = find_free_throw_shooter(
                             event)
@@ -2102,8 +2135,16 @@ def process_game(game):
             elif isinstance(event, enhanced_pbp.StartOfPeriod):
                 try_start = TryStart(
                     TryStartType.START_OF_PERIOD,  period_time_left)
-                current_game_event.event_type = EventType.StartOfPeriod
-                game_events.append(current_game_event)
+
+                lineup = get_foul_lineup(event, offense_team_id)
+                offense_is_home = offense_team_id == home_team
+                fouls_to_give = event.fouls_to_give[defense_team_id]
+                in_penalty = fouls_to_give == 0
+
+                period_start_game_event = GameEvent(
+                    lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.StartOfPeriod)
+
+                game_events.append(period_start_game_event)
                 continue
 
             elif isinstance(event, enhanced_pbp.EndOfPeriod):
@@ -2254,16 +2295,23 @@ def process_game(game):
                         raise Exception(possession, game_events)
 
                 if (has_off_try_result and event.team_id != offense_team_id) or (has_def_try_result and event.team_id == offense_team_id):
-                    current_game_event.lineup = get_foul_lineup(
+                    lineup = get_foul_lineup(
                         event, defense_team_id)
-                    current_game_event.offense_is_home = defense_team_id == home_team
-
-                current_game_event.try_start = try_start
-                current_game_event.try_result = try_result
-                current_game_event.event_type = EventType.PossessionTry
+                    offense_is_home = defense_team_id == home_team
+                    fouls_to_give = event.previous_event.fouls_to_give[offense_team_id]
+                    in_penalty = fouls_to_give == 0
+                else:
+                    lineup = get_foul_lineup(event, offense_team_id)
+                    offense_is_home = offense_team_id == home_team
+                    fouls_to_give = event.previous_event.fouls_to_give[defense_team_id]
+                    in_penalty = fouls_to_give == 0
+                try_game_event = GameEvent(
+                    lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.PossessionTry)
+                try_game_event.try_start = try_start
+                try_game_event.try_result = try_result
                 # try_start, offense_is_home, lineup, fouls_to_give,
                 #                         in_penalty, score_margin, possession.period, try_result)
-                game_events.append(current_game_event)
+                game_events.append(try_game_event)
                 try_start = next_try_start
                 # TODO handle foul_after_fts and out_of_order_live_free_throw
 
@@ -2276,15 +2324,23 @@ def process_game(game):
                 shot_type = shot_type_value[last_shot_or_ft.shot_type]
                 # rebounder = event.player1_id
                 # fouler = event.player3_id
-                current_game_event.shooter = shooter
-                current_game_event.shot_type = shot_type
-                current_game_event.rebound_result = rebound_result_type
-                current_game_event.rebounder = rebounder
-                current_game_event.fouler = fouler
-                current_game_event.num_fts = num_fts
-                current_game_event.event_type = EventType.Rebound
+                last_game_event = game_events[-1]
+                lineup = last_game_event.lineup
+                offense_is_home = last_game_event.offense_is_home
+                fouls_to_give = last_game_event.fouls_to_give
+                in_penalty = last_game_event.in_penalty
+                rebound_game_event = GameEvent(
+                    lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.Rebound)
 
-                game_events.append(current_game_event)
+                rebound_game_event.shooter = shooter
+                rebound_game_event.shot_type = shot_type
+                rebound_game_event.rebound_result = rebound_result_type
+                rebound_game_event.rebounder = rebounder
+                rebound_game_event.fouler = fouler
+                rebound_game_event.num_fts = num_fts
+                rebound_game_event.event_type = EventType.Rebound
+
+                game_events.append(rebound_game_event)
 
                 # tries[-1].rebound = rebound
                 # if not tries[-1].try_result.result_type in reboundable_results:
@@ -2334,6 +2390,10 @@ def process_game(game):
 
     game_possession_info = GamePossessionInfo(
         game_events, free_throws, delay_of_games, team_techs, technicals, double_techs)
+
+    if expected_fts != 0:
+        print("fts left to shoot")
+        raise Exception(possession, game_events, game_possession_info)
     return game_possession_info
 
 
