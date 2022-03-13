@@ -292,6 +292,10 @@ def process_season(season):
             print("prcessed", count, "games")
     return games
 
+# class GamePossessions:
+#     def __init__(self, game) -> None:
+#         self.process_game(game)
+
 
 def process_game(game):
     logging.shutdown()
@@ -302,10 +306,12 @@ def process_game(game):
     possessions = game.possessions.items
 
     home_team = game.boxscore.team_items[0]['team_id']
+    # self.home_team = home_team
     # home_team_wr = season.team_seasons[home_team].current_wr
     road_team = game.boxscore.team_items[1]['team_id']
+    # self.road_team = road_team
     # road_team_wr = season.team_seasons[road_team].current_wr
-    is_home_win = game.boxscore.team_items[0]['plus_minus'] > 0
+    # self.is_home_win = game.boxscore.team_items[0]['plus_minus'] > 0
 
     game_events: list[GameEvent] = []
     last_event = None
@@ -644,13 +650,17 @@ def process_game(game):
                         event.is_reboundable = True
                         if offense_team_id != event.team_id:
                             print("wrong offense team for ft", event)
-                            print(possession.events)
-                            raise Exception(possession, game_events)
-
-                        lineup = get_foul_lineup(event, offense_team_id)
-                        offense_is_home = offense_team_id == home_team
-                        fouls_to_give = event.fouls_to_give[defense_team_id]
-                        in_penalty = fouls_to_give == 0
+                            # print(possession.events)
+                            # raise Exception(possession, game_events)
+                            lineup = get_foul_lineup(event, defense_team_id)
+                            offense_is_home = defense_team_id == home_team
+                            fouls_to_give = event.fouls_to_give[offense_team_id]
+                            in_penalty = fouls_to_give == 0
+                        else:
+                            lineup = get_foul_lineup(event, offense_team_id)
+                            offense_is_home = offense_team_id == home_team
+                            fouls_to_give = event.fouls_to_give[defense_team_id]
+                            in_penalty = fouls_to_give == 0
                         live_free_throw = GameEvent(
                             lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.LiveFreeThrow)
 
@@ -764,6 +774,37 @@ def process_game(game):
                 else:
                     tmp_defense = defense_team_id
                     tmp_offense = offense_team_id
+
+                if start_of_game_or_overtime:
+                    # game starts with a loose ball foul
+                    if not event.is_loose_ball_foul:
+                        print("wrong foul to start game?", event)
+                    try_start = TryStart(
+                        TryStartType.AFTER_FOUL, period_time_left)
+
+                    jumpball_result = JumpballResultType.NORMAL
+                    if number_of_fta_for_foul != 0:
+                        jumpball_result = JumpballResultType.LOOSE_BALL_FOUL
+                    if event.team_id == home_team:
+                        winning_team = road_team
+                        losing_team = home_team
+                    else:
+                        winning_team = home_team
+                        losing_team = road_team
+
+                    if not is_last_event_correct(game_events):
+                        print("not matching events before gamestart jumpball lbf",
+                              event)
+                        raise Exception(possession, game_events)
+
+                    # it's the start of the game, no team on offense so just stick with last lineup
+                    jumpball_game_event = GameEvent(
+                        lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.JumpBall)
+                    jumpball_game_event.jumpball_result = jumpball_result
+                    jumpball_game_event.winning_team = winning_team
+                    game_events.append(jumpball_game_event)
+                    start_of_game_or_overtime = False
+                    continue
 
                 if isinstance(event.previous_event, enhanced_pbp.JumpBall) and event.clock == event.previous_event.clock:
                     if loose_ball_foul_rebound:
@@ -1384,6 +1425,7 @@ def process_game(game):
                                 print("lane violation w exp fts",
                                       expected_fts, event)
                                 print(possession.events)
+                                raise Exception(possession, game_events)
                                 pass
                             else:
                                 # reshoot because they missed,
@@ -1975,7 +2017,7 @@ def process_game(game):
                 elif out_of_order_jumpball_rebound:
                     out_of_order_jumpball_rebound = False
                     continue
-                if is_real_rebound and reboundable:
+                if reboundable:
                     next_event = event.next_event
                     if isinstance(next_event, enhanced_pbp.JumpBall) and event.clock == next_event.clock:
                         logging.debug(f"skipping jb rebound {event.event_num}")
@@ -2270,7 +2312,10 @@ def process_game(game):
                         # if prev_event is None:
                         #     print("no prev event for jumpball", event)
                         #     raise Exception(possession, game_events)
-
+                        prev_event = event.previous_event
+                        if is_reboundable(game_events[-2]) and game_events[-1].event_type == EventType.Rebound and isinstance(prev_event, enhanced_pbp.Rebound) and prev_event.is_placeholder:
+                            del last_shot_or_ft.has_been_rebounded
+                            game_events.pop()
                         # if the last try ended with a missed shot this try doesn't have a try_start yet,
                         # should be a Rebound not a Try
                         if is_reboundable(game_events[-1]) and not hasattr(last_shot_or_ft, "has_been_rebounded"):
