@@ -320,6 +320,7 @@ def process_game(game):
     delay_of_games = {home_team: 0, road_team: 0, 0: 0}
     team_techs = {home_team: 0, road_team: 0, 0: 0}
     technicals = {home_team: {}, road_team: {}, 0: 0}
+    missed_techs = 0
     double_techs = ([], [])
 
     # keep track of numbers of free throws/rebounds
@@ -591,10 +592,17 @@ def process_game(game):
                         next_event = next_event.next_event
                     else:
                         if missing_delay_of_game_tech:
+                            print("using missing delay of game tech")
                             expected_fts += 1
+                            expected_tfts += 1
+                            missing_delay_of_game_tech = False
                         else:
-                            print("No expected free throws and no tech", event)
-                            raise Exception(possession, game_events)
+                            print("No expected free throws and no tech",
+                                  event, "adding another tech foul")
+                            expected_fts += 1
+                            expected_tfts += 1
+                            missed_techs += 1
+
                 if expected_fts <= 0:
                     # check if the foul is out of order ahead of this free throw
 
@@ -616,10 +624,6 @@ def process_game(game):
 
                 # catch team/coach techs
                 if event.is_technical_ft:
-                    if expected_tfts == 0 and missing_delay_of_game_tech:
-                        print("using missing delay of game tech")
-                        expected_tfts += 1
-                        missing_delay_of_game_tech = False
                     expected_tfts -= 1
                     if offense_team_id == event.team_id:
                         team_techs[offense_team_id] += 1
@@ -717,30 +721,35 @@ def process_game(game):
                         continue
 
                     next_event = event.next_event
-                    if isinstance(next_event, enhanced_pbp.Replay):
+                    while event.clock == next_event.clock:
+                        if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical:
+                            different_teams = (
+                                (next_event.team_id == road_team and event.team_id == home_team) or
+                                (next_event.team_id == home_team and event.team_id == road_team))
+                            if different_teams:
+                                # actually a double technical
+                                double_techs[0].append(fouler)
+                                double_techs[1].append(next_event.player1_id)
+                                seperate_double_technical = True
+                            break
                         next_event = next_event.next_event
-                    different_teams = (
-                        (next_event.team_id == road_team and event.team_id == home_team) or
-                        (next_event.team_id == home_team and event.team_id == road_team))
-                    if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical and different_teams:
-                        # actually a double technical
-                        double_techs[0].append(fouler)
-                        double_techs[1].append(next_event.player1_id)
-                        seperate_double_technical = True
+                    if seperate_double_technical:
+                        continue
+
+                    if out_of_order_tech_foul:
+                        out_of_order_tech_foul = False
                     else:
-                        if out_of_order_tech_foul:
-                            out_of_order_tech_foul = False
-                        else:
-                            expected_fts += 1
-                            expected_tfts += 1
-                        if event.player1_id == 0:
-                            # on a coach, ignore, catch in tech free throw
-                            technicals[0] += 1
-                            pass
-                        elif event.player1_id in technicals[event.team_id]:
-                            technicals[event.team_id][event.player1_id] += 1
-                        else:
-                            technicals[event.team_id][event.player1_id] = 1
+                        expected_fts += 1
+                        expected_tfts += 1
+
+                    if event.player1_id == 0:
+                        # on a coach, ignore, catch in tech free throw
+                        technicals[0] += 1
+                        pass
+                    elif event.player1_id in technicals[event.team_id]:
+                        technicals[event.team_id][event.player1_id] += 1
+                    else:
+                        technicals[event.team_id][event.player1_id] = 1
                     continue
                 elif event.is_double_technical:
                     double_techs[0].append(fouler)
