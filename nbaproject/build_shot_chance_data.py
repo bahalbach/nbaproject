@@ -299,14 +299,18 @@ def process_game(game):
     handled_off_lane_violation_turnover = False
     mistake_call = False
     missing_start = None
-    has_out_of_order_foul_rebound = False
-    out_of_order_foul_rebound = None
+
     out_of_order_and1_foul = None
     out_of_order_shot_rebound = False
     out_of_order_jumpball_rebound = False
     goaltend_before_shot = False
+
     foul_after_fts = None
     out_of_order_live_free_throw = None
+    has_out_of_order_live_free_throw = False
+    has_out_of_order_foul_rebound = False
+    out_of_order_foul_rebound = None
+
     loose_ball_foul_before_rebound = None
     flagrant_and_foul = False
     last_oft_event = None
@@ -347,8 +351,30 @@ def process_game(game):
             # mistake_call = False
 
         for event in possession.events:
+            if has_out_of_order_live_free_throw:
+                if not is_last_event_correct(game_events):
+                    print("not matching events before out of order live ft",
+                          event)
+                    raise Exception(possession, game_events)
+
+                if out_of_order_live_free_throw is None:
+                    print("no out of order ft", event)
+                    raise Exception(possession, game_events)
+                game_events.append(out_of_order_live_free_throw)
+                out_of_order_live_free_throw = None
+                has_out_of_order_live_free_throw = False
+
+                if out_of_order_foul_rebound is not None:
+                    if not is_last_event_correct(game_events):
+                        print("not matching events before out of order live ft rb",
+                              event)
+                        raise Exception(possession, game_events)
+                    game_events.append(out_of_order_foul_rebound)
+                    out_of_order_foul_rebound = None
+
             if not is_last_event_correct(game_events):
-                print("not matching events", event.previous_event)
+                print("not matching events",
+                      possession.period, event.previous_event)
                 raise Exception(possession, game_events)
 
             if (event.game_id, event.event_num) in switch_offense_defense_overrides:
@@ -377,8 +403,6 @@ def process_game(game):
 
             has_jumpball = False
             winning_team = None
-
-            has_out_of_order_live_free_throw = False
 
             if isinstance(event, enhanced_pbp.FieldGoal):
                 goaltended = False
@@ -1664,19 +1688,6 @@ def process_game(game):
 
                     next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
 
-                elif event.is_travel:
-                    if isinstance(event.previous_event, enhanced_pbp.FieldGoal) and not event.previous_event.is_made and try_start.start_type is None:
-                        has_rebound = True
-                        rebound_result_type = ReboundResult.KICKED_BALL_TURNOVER
-                        fouler = event.player1_id
-                        try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
-                    else:
-                        try_result.result_type = TryResultType.TRAVEL
-                        try_result.result_player1_id = event.player1_id
-                        has_off_try_result = True
-
-                        next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
-
                 elif event.is_step_out_of_bounds:
                     try_result.result_type = TryResultType.STEP_OUT_TURNOVER
                     try_result.result_player1_id = event.player1_id
@@ -1822,6 +1833,25 @@ def process_game(game):
                     has_off_try_result = True
 
                     next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
+
+                elif event.is_travel:
+                    last_event = game_events[-1]
+                    if last_event.event_type == EventType.Rebound and last_event.period_time_left == period_time_left and game_events[-2].lineup.offense_team == event.team_id:
+                        game_events[-1].rebound_result = ReboundResult.KICKED_BALL_TURNOVER
+                        try_start = TryStart(
+                            TryStartType.DEAD_BALL_TURNOVER, period_time_left)
+                    elif is_reboundable(last_event):
+                        has_rebound = True
+                        rebound_result_type = ReboundResult.KICKED_BALL_TURNOVER
+                        fouler = event.player1_id
+                        try_start = TryStart(
+                            TryStartType.DEAD_BALL_TURNOVER, period_time_left)
+                    else:
+                        try_result.result_type = TryResultType.TRAVEL
+                        try_result.result_player1_id = event.player1_id
+                        has_off_try_result = True
+
+                        next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
 
                 elif event.is_shot_clock_violation:
                     last_event = game_events[-1]
@@ -2387,6 +2417,7 @@ def process_game(game):
 
                 if has_out_of_order_foul_rebound:
                     out_of_order_foul_rebound = rebound_game_event
+                    has_out_of_order_foul_rebound = False
                 else:
                     game_events.append(rebound_game_event)
 
@@ -2416,25 +2447,6 @@ def process_game(game):
                 #           lineup.offense_team, offense_team_id, event)
                 # return possession, tries
 
-            if has_out_of_order_live_free_throw:
-                if not is_last_event_correct(game_events):
-                    print("not matching events before out of order live ft",
-                          event)
-                    raise Exception(possession, game_events)
-
-                if out_of_order_live_free_throw is None:
-                    print("no out of order ft", event)
-                    raise Exception(possession, game_events)
-                game_events.append(out_of_order_live_free_throw)
-                out_of_order_live_free_throw = None
-
-                if out_of_order_foul_rebound is not None:
-                    if not is_last_event_correct(game_events):
-                        print("not matching events before out of order live ft rb",
-                              event)
-                        raise Exception(possession, game_events)
-                    game_evemts.append(out_of_order_foul_rebound)
-                    out_of_order_foul_rebound = None
     delay_of_games = (
         delay_of_games[home_team], delay_of_games[road_team], delay_of_games[0])
     team_techs = (team_techs[home_team],
