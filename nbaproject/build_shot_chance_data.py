@@ -1472,6 +1472,11 @@ def process_game(game):
                         continue
 
                     if expected_tfts == 0:
+                        is_def3sec = (isinstance(event.previous_event, enhanced_pbp.Foul) and event.previous_event.is_defensive_3_seconds and event.clock == event.previous_event.clock) or (
+                            isinstance(event.next_event, enhanced_pbp.Foul) and event.next_event.is_defensive_3_seconds and event.clock == event.next_event.clock)
+                        if is_def3sec:
+                            # handled in that foul
+                            continue
                         rebound = event.previous_event
                         missed_ft = rebound.previous_event
                         if isinstance(rebound, enhanced_pbp.Rebound) and isinstance(missed_ft, enhanced_pbp.FreeThrow) and not missed_ft.is_made and missed_ft.clock == event.clock and game_events[-2].event_type == EventType.LiveFreeThrow:
