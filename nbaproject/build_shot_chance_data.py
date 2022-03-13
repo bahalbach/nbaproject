@@ -519,6 +519,7 @@ def process_game(game):
                             try_result.result_player2_id = assister
                 else:
                     event.is_reboundable = True
+                    last_reboundable_shot = event
                     if event.is_blocked:
                         # if goaltended:
                         # print("goaltended blocked",
@@ -649,6 +650,7 @@ def process_game(game):
                         possession_after = False
                     else:
                         event.is_reboundable = True
+                        last_reboundable_shot = event
                         if offense_team_id != event.team_id:
                             print("wrong offense team for ft", event)
                             # print(possession.events)
@@ -696,9 +698,9 @@ def process_game(game):
                                    expected_fts, possession_after, score_margin)
                     free_throws.append(ft)
 
-                if not event.is_technical_ft:
+                # if not event.is_technical_ft:
                     # last_ft = event
-                    last_shot_or_ft = event
+                last_shot_or_ft = event
                 continue
 
             elif isinstance(event, enhanced_pbp.Foul):
@@ -2333,11 +2335,11 @@ def process_game(game):
                         #     raise Exception(possession, game_events)
                         prev_event = event.previous_event
                         if is_reboundable(game_events[-2]) and game_events[-1].event_type == EventType.Rebound and isinstance(prev_event, enhanced_pbp.Rebound) and prev_event.is_placeholder:
-                            if not hasattr(last_shot_or_ft, "has_been_rebounded"):
+                            if not hasattr(last_reboundable_shot, "has_been_rebounded"):
                                 print("last shot not rebounded",
-                                      event, last_shot_or_ft)
+                                      event, last_rebounable)
                                 raise Exception(possession, game_events)
-                            del last_shot_or_ft.has_been_rebounded
+                            del last_reboundable_shot.has_been_rebounded
                             game_events.pop()
                         # if the last try ended with a missed shot this try doesn't have a try_start yet,
                         # should be a Rebound not a Try
@@ -2405,12 +2407,13 @@ def process_game(game):
                 # TODO handle foul_after_fts and out_of_order_live_free_throw
 
             elif has_rebound:
-                if hasattr(last_shot_or_ft, "has_been_rebounded"):
-                    print("shot has already been rebounded", event)
+                if hasattr(last_reboundable_shot, "has_been_rebounded"):
+                    print("shot has already been rebounded",
+                          event, last_reboundable_shot)
                     raise Exception(possession, game_events)
-                last_shot_or_ft.has_been_rebounded = True
-                shooter = last_shot_or_ft.player1_id
-                shot_type = shot_type_value[last_shot_or_ft.shot_type]
+                last_reboundable_shot.has_been_rebounded = True
+                shooter = last_reboundable_shot.player1_id
+                shot_type = shot_type_value[last_reboundable_shot.shot_type]
                 # rebounder = event.player1_id
                 # fouler = event.player3_id
                 last_game_event = game_events[-1]
