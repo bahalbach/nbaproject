@@ -696,8 +696,9 @@ def process_game(game):
                                    expected_fts, possession_after, score_margin)
                     free_throws.append(ft)
 
-                last_ft = event
-                last_shot_or_ft = event
+                if not event.is_technical_ft:
+                    # last_ft = event
+                    last_shot_or_ft = event
                 continue
 
             elif isinstance(event, enhanced_pbp.Foul):
@@ -1471,12 +1472,13 @@ def process_game(game):
                         game_events.append(live_free_throw)
                         continue
 
+                    is_def3sec = (isinstance(event.previous_event, enhanced_pbp.Foul) and event.previous_event.is_defensive_3_seconds and event.clock == event.previous_event.clock) or (
+                        isinstance(event.next_event, enhanced_pbp.Foul) and event.next_event.is_defensive_3_seconds and event.clock == event.next_event.clock)
+                    if is_def3sec:
+                        # handled in that foul
+                        continue
+
                     if expected_tfts == 0:
-                        is_def3sec = (isinstance(event.previous_event, enhanced_pbp.Foul) and event.previous_event.is_defensive_3_seconds and event.clock == event.previous_event.clock) or (
-                            isinstance(event.next_event, enhanced_pbp.Foul) and event.next_event.is_defensive_3_seconds and event.clock == event.next_event.clock)
-                        if is_def3sec:
-                            # handled in that foul
-                            continue
                         rebound = event.previous_event
                         missed_ft = rebound.previous_event
                         if isinstance(rebound, enhanced_pbp.Rebound) and isinstance(missed_ft, enhanced_pbp.FreeThrow) and not missed_ft.is_made and missed_ft.clock == event.clock and game_events[-2].event_type == EventType.LiveFreeThrow:
@@ -1563,17 +1565,17 @@ def process_game(game):
                                 if violater1 == event.player1_id:
                                     if hasattr(event, "player3_id"):
                                         violater2 = event.player3_id
-                                    else:
-                                        print(
-                                            "double lane violation jumpball missing player3_id")
+                                    # else:
+                                    #     print(
+                                    #         "double lane violation jumpball missing player3_id")
                                 else:
                                     violater2 = event.player1_id
                                 break
                             next_event = next_event.next_event
 
-                        if violater2 is None:
-                            print(
-                                "no second violator for double lane violation", event)
+                        # if violater2 is None:
+                        #     print(
+                        #         "no second violator for double lane violation", event)
                         live_free_throw.ft_result = LiveFreeThrowResult.DOUBLE_LANE_VIOLATION
                         live_free_throw.fouler = violater1
                         live_free_throw.fouled = violater2
@@ -2331,6 +2333,10 @@ def process_game(game):
                         #     raise Exception(possession, game_events)
                         prev_event = event.previous_event
                         if is_reboundable(game_events[-2]) and game_events[-1].event_type == EventType.Rebound and isinstance(prev_event, enhanced_pbp.Rebound) and prev_event.is_placeholder:
+                            if not hasattr(last_shot_or_ft, "has_been_rebounded"):
+                                print("last shot not rebounded",
+                                      event, last_shot_or_ft)
+                                raise Exception(possession, game_events)
                             del last_shot_or_ft.has_been_rebounded
                             game_events.pop()
                         # if the last try ended with a missed shot this try doesn't have a try_start yet,
