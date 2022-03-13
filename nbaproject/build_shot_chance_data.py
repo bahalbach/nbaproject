@@ -142,7 +142,7 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
             break
         # 7 = violation
         elif (event.event_type == 7 and event.is_lane_violation and event.team_id != foul.team_id):
-            if not last_ft_is_miss:
+            if not last_ft_is_miss and not (event.next_event.event_type == 5 and event.next_event.is_lane_violation):
                 seen_ft += 1
             pass  # can occur before last ft
         elif (event.event_type == 7 and event.event_action_type == 6):
@@ -350,6 +350,7 @@ def process_game(game):
     loose_ball_foul_turnover = False
     handled_jumpball_turnover = False
     double_lane_violation = False
+    handled_off_lane_violation_turnover = False
     mistake_call = False
     missing_start = None
     out_of_order_foul_rebound = False
@@ -1465,6 +1466,8 @@ def process_game(game):
                             try_start = TryStart(
                                 TryStartType.DEAD_BALL_TURNOVER, period_time_left)
                             expected_fts -= 1
+                            if (isinstance(next_event, enhanced_pbp.Turnover) and next_event.is_lane_violation):
+                                handled_off_lane_violation_turnover = True
                         game_events.append(live_free_throw)
                         continue
 
@@ -1926,6 +1929,12 @@ def process_game(game):
                         continue
 
                     else:
+                        if isinstance(event.previous_event, enhanced_pbp.Rebound) and event.previous_event.is_placeholder:
+                            if game_events[-1].event_type != EventType.Rebound:
+                                print("should be a rebound")
+                                raise Exception(possession, game_events)
+                            game_events[-1].rebound_result = ReboundResult.OFF_REBOUND
+                            game_events[-1].rebounder = event.player1_id
                         try_result.result_type = TryResultType.OFFENSIVE_GOALTENDING_TURNOVER
                         try_result.result_player1_id = event.player1_id
                         has_off_try_result = True
@@ -1971,6 +1980,9 @@ def process_game(game):
                         next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
 
                 elif event.is_lane_violation:
+                    if handled_off_lane_violation_turnover:
+                        handled_off_lane_violation_turnover = False
+                        continue
                     if expected_fts - expected_tfts != 0:
                         try_start = TryStart(
                             TryStartType.DEAD_BALL_TURNOVER, period_time_left)
