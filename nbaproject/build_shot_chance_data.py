@@ -76,16 +76,6 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
 
     clock = foul.clock
     event = foul.next_event
-    # while (
-    #     event is not None
-    #     and event.clock == clock
-    #     and not (
-    #         hasattr(event, "is_first_ft")
-    #         and not event.is_technical_ft
-    #         and self.team_id != event.team_id
-    #     )
-    # ):
-    #     event = event.next_event
     possession_after = foul.is_loose_ball_foul or foul.is_flagrant
     number_of_fta_for_foul = 0
     total_fts = 0
@@ -94,9 +84,7 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
     # other_number_of_fta_for_foul = 0
     seen_ft = 0
     while event and event.clock == clock:
-        # matches_player = (foul.is_inbound_foul or foul.is_away_from_play_foul or not hasattr(foul, "player3_id")
-        #                   or foul.player3_id == event.player1_id)
-        # 6 = foul
+
         if event.event_type == 6 and not (event.is_technical or event.is_double_technical or event.is_flagrant):
             break
         elif event.event_type == 6 and event.is_flagrant:
@@ -112,34 +100,19 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
                 seen_ft += 1
                 number_of_fta_for_foul = event.num_ft_for_trip
                 last_ft_is_miss = not event.is_made
-            # foul.team_id != event.team_id and matches_player:
-                # if event.is_ft_1_of_1:
-                #     number_of_fta_for_foul = 1
-                # elif event.is_ft_1_of_2 or event.is_ft_2_of_2:
-                #     number_of_fta_for_foul = 2
-                # elif event.is_ft_1_of_3 or event.is_ft_2_of_3 or event.is_ft_3_of_3:
-                #     number_of_fta_for_foul = 3
 
-            # elif foul.team_id != event.team_id:
-            #     other_seen_ft += 1
-            #     if "of 1" in event.description:
-            #         other_number_of_fta_for_foul = 1
-            #     elif "of 2" in event.description:
-            #         other_number_of_fta_for_foul = 2
-            #     elif "of 3" in event.description:
-            #         other_number_of_fta_for_foul = 3
             else:
                 pass
-                # print("ft not right")
-                # raise Exception()
+
         # 5 = turnover
         elif (event.event_type == 5 and event.is_offensive_goaltending):
             seen_ft += 1
             break
         elif (event.event_type == 5 and event.is_lane_violation):
-            # if seen_ft > 0:
-            seen_ft += 1
+            if not last_ft_is_miss:
+                seen_ft += 1
             break
+
         # 7 = violation
         elif (event.event_type == 7 and event.is_lane_violation and event.team_id != foul.team_id):
             if not last_ft_is_miss and not (event.next_event.event_type == 5 and event.next_event.is_lane_violation):
@@ -149,20 +122,15 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
             # double lane violation
             seen_ft += 1
             break
-        # jump ball, from double lane violation # TODO check if need this
-        # elif (event.event_type == 10):
-        #     seen_ft += 1
-        #     break
+
         event = event.next_event
     else:
         pass
-        # if event and event.event_type == 5 and event.is_offensive_goaltending and event.team_id != foul.team_id and not possession_after:
-        #     seen_ft += 1
+
     if max(number_of_fta_for_foul, seen_ft, total_fts-flagrant_fts) == 0:
         event = foul.previous_event
         while event and event.clock == clock:
-            # matches_player = (foul.is_inbound_foul or foul.is_away_from_play_foul or not hasattr(foul, "player3_id")
-            #                   or foul.player3_id == event.player1_id)
+
             if event.event_type == 6 and not (event.is_technical or event.is_double_technical or event.is_flagrant):
                 break
             elif event.event_type == 6 and event.is_flagrant:
@@ -176,28 +144,6 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
                     seen_ft += 1
                     number_of_fta_for_foul = max(
                         event.num_ft_for_trip, number_of_fta_for_foul)
-                #  foul.team_id != event.team_id and matches_player:
-                    # if event.is_ft_1_of_1:
-                    #     number_of_fta_for_foul = 1
-                    # elif event.is_ft_1_of_2 or event.is_ft_2_of_2:
-                    #     number_of_fta_for_foul = 2
-                    # elif event.is_ft_1_of_3 or event.is_ft_2_of_3 or event.is_ft_3_of_3:
-                    #     number_of_fta_for_foul = 3
-                    # if "of 1" in event.description:
-                    #     number_of_fta_for_foul = 1
-                    # elif "of 2" in event.description:
-                    #     number_of_fta_for_foul = 2
-                    # elif "of 3" in event.description:
-                    #     number_of_fta_for_foul = 3
-                # elif foul.team_id != event.team_id:
-                #     other_seen_ft += 1
-                #     if "of 1" in event.description:
-                #         other_number_of_fta_for_foul = 1
-                #     elif "of 2" in event.description:
-                #         other_number_of_fta_for_foul = 2
-                #     elif "of 3" in event.description:
-                #         other_number_of_fta_for_foul = 3
-                else:
                     pass
                     # print("ft not right")
                     # raise Exception()
@@ -2015,7 +1961,14 @@ def process_game(game):
                         continue
                     else:
                         if event.previous_event.clock == event.clock:
-                            print("really off 3sec?", event)
+                            last_event_missed_live_ft = game_events[-2].event_type == EventType.LiveFreeThrow and game_events[-2].ft_result == LiveFreeThrowResult.MISS and game_events[-2].period_time_left == period_time_left
+                            if last_event_missed_live_ft:
+                                game_events.pop() 
+                                game_events[-1].ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
+                                game_events[-1].fouler = event.player1_id
+                                continue
+                            else:
+                                print("really off 3sec?", event)
                         has_off_try_result = True
                         try_result.result_player1_id = event.player1_id
                         try_result.result_type = TryResultType.OFF_3SECONDS_TURNOVER
