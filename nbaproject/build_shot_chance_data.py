@@ -721,7 +721,7 @@ def process_game(game):
                         continue
 
                     next_event = event.next_event
-                    while event.clock == next_event.clock:
+                    while next_event and event.clock == next_event.clock:
                         if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical:
                             different_teams = (
                                 (next_event.team_id == road_team and event.team_id == home_team) or
