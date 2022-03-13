@@ -299,7 +299,8 @@ def process_game(game):
     handled_off_lane_violation_turnover = False
     mistake_call = False
     missing_start = None
-    out_of_order_foul_rebound = False
+    has_out_of_order_foul_rebound = False
+    out_of_order_foul_rebound = None
     out_of_order_and1_foul = None
     out_of_order_shot_rebound = False
     out_of_order_jumpball_rebound = False
@@ -632,7 +633,7 @@ def process_game(game):
                                 missing_start = TryStart(
                                     TryStartType.MADE_BASKET, period_time_left)
                             else:
-                                out_of_order_foul_rebound = True
+                                has_out_of_order_foul_rebound = True
                         else:
                             game_events.append(live_free_throw)
                             if event.is_made:
@@ -763,7 +764,6 @@ def process_game(game):
                     try_start = TryStart(
                         TryStartType.AFTER_FOUL, period_time_left)
 
-                    # TODO handle jump ball foul with jump ball lbr result type
                     if game_events[-1].event_type != EventType.JumpBall:
                         print("jumpball foul not jumpball", event)
                         print(possession.events)
@@ -1961,9 +1961,10 @@ def process_game(game):
                         continue
                     else:
                         if event.previous_event.clock == event.clock:
-                            last_event_missed_live_ft = game_events[-2].event_type == EventType.LiveFreeThrow and game_events[-2].ft_result == LiveFreeThrowResult.MISS and game_events[-2].period_time_left == period_time_left
+                            last_event_missed_live_ft = game_events[-2].event_type == EventType.LiveFreeThrow and game_events[
+                                -2].ft_result == LiveFreeThrowResult.MISS and game_events[-2].period_time_left == period_time_left
                             if last_event_missed_live_ft:
-                                game_events.pop() 
+                                game_events.pop()
                                 game_events[-1].ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
                                 game_events[-1].fouler = event.player1_id
                                 continue
@@ -2106,12 +2107,11 @@ def process_game(game):
                             start_player1_id = event.player1_id
                             start_player2_id = shooter
 
-                    if out_of_order_foul_rebound:
+                    has_rebound = True
+                    if has_out_of_order_foul_rebound:
                         missing_start = TryStart(
                             start_type, period_time_left, start_player1_id, start_player2_id, rebound_shot_type=shot_type)
-                        out_of_order_foul_rebound = False
                     else:
-                        has_rebound = True
                         try_start = TryStart(start_type, period_time_left,
                                              start_player1_id, start_player2_id, rebound_shot_type=shot_type)
 
@@ -2385,7 +2385,10 @@ def process_game(game):
                 rebound_game_event.num_fts = num_fts
                 rebound_game_event.event_type = EventType.Rebound
 
-                game_events.append(rebound_game_event)
+                if has_out_of_order_foul_rebound:
+                    out_of_order_foul_rebound = rebound_game_event
+                else:
+                    game_events.append(rebound_game_event)
 
                 # tries[-1].rebound = rebound
                 # if not tries[-1].try_result.result_type in reboundable_results:
@@ -2425,6 +2428,13 @@ def process_game(game):
                 game_events.append(out_of_order_live_free_throw)
                 out_of_order_live_free_throw = None
 
+                if out_of_order_foul_rebound is not None:
+                    if not is_last_event_correct(game_events):
+                        print("not matching events before out of order live ft rb",
+                              event)
+                        raise Exception(possession, game_events)
+                    game_evemts.append(out_of_order_foul_rebound)
+                    out_of_order_foul_rebound = None
     delay_of_games = (
         delay_of_games[home_team], delay_of_games[road_team], delay_of_games[0])
     team_techs = (team_techs[home_team],
