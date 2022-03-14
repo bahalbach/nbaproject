@@ -218,13 +218,13 @@ ignore_delay_of_game_violation_games = {
 }
 
 
-def process_season(season):
+def process_season(season, first_game=0):
     for team_season in season.team_seasons.values():
         team_season.reset_season()
 
     games: list[GamePossessionInfo] = []
     count = 0
-    for game_dict in season.schedule.games.final_games:
+    for game_dict in season.schedule.games.final_games[first_game:]:
         game_id = game_dict['game_id']
         # print("processing game", game_id)
 
@@ -707,7 +707,7 @@ def process_game(game):
 
                     next_event = event.next_event
                     while next_event and event.clock == next_event.clock:
-                        if isinstance(next_event, enhanced_pbp.Foul) and next_event.is_technical:
+                        if isinstance(next_event, enhanced_pbp.Foul) and (next_event.is_technical or (next_event.is_double_technical and not hasattr(next_event, "player3_id"))):
                             different_teams = (
                                 (next_event.team_id == road_team and event.team_id == home_team) or
                                 (next_event.team_id == home_team and event.team_id == road_team))
@@ -737,6 +737,9 @@ def process_game(game):
                         technicals[event.team_id][event.player1_id] = 1
                     continue
                 elif event.is_double_technical:
+                    if seperate_double_technical:
+                        seperate_double_technical = False
+                        continue
                     double_techs[0].append(fouler)
                     double_techs[1].append(fouled)
                     continue
@@ -1389,7 +1392,89 @@ def process_game(game):
                         print(event, possession.events)
                         raise Exception(possession, game_events)
 
+                elif event.is_double_lane_violation or (isinstance(event.next_event, enhanced_pbp.Violation) and event.next_event.is_lane_violation and event.next_event.team_id != event.team_id):
+                    if double_lane_violation:
+                        continue
+                    if expected_fts == 0:
+                        print("unhandled non ft double lane violation", event)
+                        print(possession.events)
+                        raise Exception(possession, game_events)
+
+                    if expected_fts != 1:
+                        # not a live free throw
+                        # TODO add as a lane violation
+                        if event.team_id == offense_team_id:
+                            print("double lane violation w exp fts",
+                                  expected_fts, event)
+                            print(possession.events)
+                            pass
+                        else:
+                            # reshoot because they missed?
+                            pass
+                        continue
+
+                    ft_team = get_ft_team(game_events[-1])
+                    non_ft_team = road_team if ft_team == home_team else home_team
+
+                    lineup = get_foul_lineup(event, ft_team)
+                    offense_is_home = ft_team == home_team
+                    fouls_to_give = event.fouls_to_give[non_ft_team]
+                    in_penalty = fouls_to_give == 0
+
+                    live_free_throw = GameEvent(
+                        lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.LiveFreeThrow)
+
+                    live_free_throw.shooter = find_free_throw_shooter(
+                        event)
+                    live_free_throw.goaltender = None
+                    live_free_throw.fouler = event.player1_id
+                    live_free_throw.fouled = None
+
+                    next_event = event.next_event
+                    if next_event.clock == event.clock and (isinstance(next_event, enhanced_pbp.FreeThrow)):
+                        # repeat freethrow attempt
+                        if event.team_id == offense_team_id:
+                            live_free_throw.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
+                        else:
+                            live_free_throw.ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY
+                        live_free_throw.fouler = event.player1_id
+                        live_free_throw.fouled = None
+                    else:
+                        double_lane_violation = True
+
+                        violater1 = event.player1_id
+                        violater2 = None
+                        # find other lane violation
+                        while next_event and next_event.clock == event.clock:
+                            if isinstance(next_event, enhanced_pbp.Violation) and (next_event.is_double_lane_violation or (next_event.is_lane_violation and next_event.team_id != event.team_id)):
+                                violater2 = next_event.player1_id
+                                break
+                            elif isinstance(next_event, enhanced_pbp.JumpBall):
+                                if violater1 == event.player1_id:
+                                    if hasattr(event, "player3_id"):
+                                        violater2 = event.player3_id
+                                    # else:
+                                    #     print(
+                                    #         "double lane violation jumpball missing player3_id")
+                                else:
+                                    violater2 = event.player1_id
+                                break
+                            next_event = next_event.next_event
+
+                        # if violater2 is None:
+                        #     print(
+                        #         "no second violator for double lane violation", event)
+                        live_free_throw.ft_result = LiveFreeThrowResult.DOUBLE_LANE_VIOLATION
+                        live_free_throw.fouler = violater1
+                        live_free_throw.fouled = violater2
+                        expected_fts -= 1
+
+                    game_events.append(live_free_throw)
+                    continue
+
                 elif event.is_lane_violation:
+                    if double_lane_violation:
+                        continue
                     if expected_fts - expected_tfts > 0:
                         if expected_fts != 1:
 
@@ -1474,86 +1559,6 @@ def process_game(game):
                         # raise Exception(possession, game_events)
 
                     # def 3 seconds handled in foul
-                    continue
-
-                elif event.is_double_lane_violation:
-                    if double_lane_violation:
-                        continue
-                    if expected_fts == 0:
-                        print("unhandled non ft double lane violation", event)
-                        print(possession.events)
-                        raise Exception(possession, game_events)
-
-                    if expected_fts != 1:
-                        # not a live free throw
-                        # TODO add as a lane violation
-                        if event.team_id == offense_team_id:
-                            print("double lane violation w exp fts",
-                                  expected_fts, event)
-                            print(possession.events)
-                            pass
-                        else:
-                            # reshoot because they missed?
-                            pass
-                        continue
-
-                    ft_team = get_ft_team(game_events[-1])
-                    non_ft_team = road_team if ft_team == home_team else home_team
-
-                    lineup = get_foul_lineup(event, ft_team)
-                    offense_is_home = ft_team == home_team
-                    fouls_to_give = event.fouls_to_give[non_ft_team]
-                    in_penalty = fouls_to_give == 0
-
-                    live_free_throw = GameEvent(
-                        lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.LiveFreeThrow)
-
-                    live_free_throw.shooter = find_free_throw_shooter(
-                        event)
-                    live_free_throw.goaltender = None
-                    live_free_throw.fouler = event.player1_id
-                    live_free_throw.fouled = None
-
-                    next_event = event.next_event
-                    if next_event.clock == event.clock and (isinstance(next_event, enhanced_pbp.FreeThrow) or (isinstance(next_event, enhanced_pbp.Violation) and next_event.is_lane_violation)):
-                        # repeat freethrow attempt
-                        if event.team_id == offense_team_id:
-                            live_free_throw.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
-                        else:
-                            live_free_throw.ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY
-                        live_free_throw.fouler = event.player1_id
-                        live_free_throw.fouled = None
-                    else:
-                        double_lane_violation = True
-
-                        violater1 = event.player1_id
-                        violater2 = None
-                        # find other lane violation
-                        while next_event and next_event.clock == event.clock:
-                            if isinstance(next_event, enhanced_pbp.Violation) and next_event.is_double_lane_violation:
-                                violater2 = next_event.player1_id
-                                break
-                            elif isinstance(next_event, enhanced_pbp.JumpBall):
-                                if violater1 == event.player1_id:
-                                    if hasattr(event, "player3_id"):
-                                        violater2 = event.player3_id
-                                    # else:
-                                    #     print(
-                                    #         "double lane violation jumpball missing player3_id")
-                                else:
-                                    violater2 = event.player1_id
-                                break
-                            next_event = next_event.next_event
-
-                        # if violater2 is None:
-                        #     print(
-                        #         "no second violator for double lane violation", event)
-                        live_free_throw.ft_result = LiveFreeThrowResult.DOUBLE_LANE_VIOLATION
-                        live_free_throw.fouler = violater1
-                        live_free_throw.fouled = violater2
-                        expected_fts -= 1
-
-                    game_events.append(live_free_throw)
                     continue
 
                 elif event.is_kicked_ball_violation:
