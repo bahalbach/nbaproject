@@ -212,6 +212,11 @@ switch_offense_defense_overrides = {
     ("0021700862", 167),
     ("0021700862", 181)
 }
+ignore_correct_event_sequence_overrides = {
+    ("0021700862", 167),
+    ("0021700862", 182)
+}
+
 ignore_delay_of_game_violation_games = {
     "0021500628",
     "0021600287",
@@ -258,6 +263,8 @@ def process_game(game):
     # self.road_team = road_team
     # road_team_wr = season.team_seasons[road_team].current_wr
     # self.is_home_win = game.boxscore.team_items[0]['plus_minus'] > 0
+
+    check_correct_team = True
 
     game_events: list[GameEvent] = []
     last_event = None
@@ -351,8 +358,9 @@ def process_game(game):
             # mistake_call = False
 
         for event in possession.events:
+
             if has_out_of_order_live_free_throw:
-                if not is_last_event_correct(game_events):
+                if check_correct_team and not is_last_event_correct(game_events):
                     print("not matching events before out of order live ft",
                           event)
                     raise Exception(possession, game_events)
@@ -365,20 +373,23 @@ def process_game(game):
                 has_out_of_order_live_free_throw = False
 
                 if out_of_order_foul_rebound is not None:
-                    if not is_last_event_correct(game_events):
+                    if check_correct_team and not is_last_event_correct(game_events):
                         print("not matching events before out of order live ft rb",
                               event)
                         raise Exception(possession, game_events)
                     game_events.append(out_of_order_foul_rebound)
                     out_of_order_foul_rebound = None
 
-            if not is_last_event_correct(game_events):
+            if check_correct_team and not is_last_event_correct(game_events):
                 print("not matching events",
                       possession.period, event.previous_event)
                 raise Exception(possession, game_events)
 
             if (event.game_id, event.event_num) in switch_offense_defense_overrides:
                 offense_team_id, defense_team_id = defense_team_id, offense_team_id
+            if (event.game_id, event.event_num) in ignore_correct_event_sequence_overrides:
+                check_correct_team = not check_correct_team
+
             # if game_id == "0021700035" and event.event_num == 468:
             #     print("found")
             #     return possession
@@ -1253,9 +1264,10 @@ def process_game(game):
                     if event.team_id == offense_team_id:
                         # defense gets 1 shot and ball goes back to offense or just normal foul turnover
                         if number_of_fta_for_foul == 0:
-                            print("0 ft afp off foul")
-                            print(event, possession.events)
+                            # print("0 ft afp off foul")
+                            # print(event, possession.events)
                             # return possession, tries, free_throws
+                            # just a normal offensive foul
                             try_result.result_type = TryResultType.OFFENSIVE_FOUL_TURNOVER
                             next_try_start.start_type = TryStartType.AFTER_FOUL
                         else:
@@ -1541,12 +1553,16 @@ def process_game(game):
                         if isinstance(rebound, enhanced_pbp.Rebound) and isinstance(missed_ft, enhanced_pbp.FreeThrow) and not missed_ft.is_made and missed_ft.clock == event.clock and game_events[-2].event_type == EventType.LiveFreeThrow:
                             if event.team_id != missed_ft.team_id:
                                 print("wrong team lftv", event)
-                            game_events[-2].ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
-                            game_events.pop()
+                                print("just ignoring...")
+                            else:
+                                game_events[-2].ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
+                                game_events.pop()
                         elif isinstance(rebound, enhanced_pbp.FreeThrow) and rebound.is_made and rebound.clock == event.clock and game_events[-1].event_type == EventType.LiveFreeThrow:
                             if event.team_id == rebound.team_id:
                                 print("wrong team lftv2", event)
-                            game_events[-1].ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_MAKE
+                                print("just ignoring...")
+                            else:
+                                game_events[-1].ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_MAKE
                         else:
                             print("unhandled non ft lane violation", event)
                             print(possession.events)
@@ -2362,6 +2378,18 @@ def process_game(game):
                                 next_try_start.start_type = TryStartType.OUT_OF_BOUNDS
 
             if has_off_try_result or has_def_try_result or has_held_ball_result:
+                if start_of_game_or_overtime:
+                    start_time = 12*60 if possession.period < 4 else 5*60
+                    # pbp missing starting jumpball, just add it with the winner
+                    jumpball_game_event = GameEvent(
+                        lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, start_time, EventType.JumpBall)
+                    jumpball_game_event.jumpball_result = JumpballResultType.NORMAL
+                    jumpball_game_event.winning_team = offense_team_id
+                    game_events.append(jumpball_game_event)
+                    start_of_game_or_overtime = False
+                    try_start = TryStart(
+                        TryStartType.OUT_OF_BOUNDS,  start_time)
+
                 if try_start is None or try_start.start_type is None:
                     if missing_start is not None:
                         try_start = missing_start
