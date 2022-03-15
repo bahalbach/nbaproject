@@ -307,6 +307,7 @@ jump_ball_results = {
 class JumpballResultType(Enum):
     NORMAL = 1
     LOOSE_BALL_FOUL = 2
+    CLEAR_PATH_FOUL = 3
 
 # after the ' for distance
 # before , or : for name BLOCK
@@ -482,6 +483,11 @@ has_defensive_fts_rb_results = {
     ReboundResult.LBF_2FT_DREB,
 }
 
+has_fts_jumpball_results = {
+    JumpballResultType.LOOSE_BALL_FOUL,
+    JumpballResultType.CLEAR_PATH_FOUL
+}
+
 
 class EventType(Enum):
     StartOfPeriod = 0
@@ -577,7 +583,7 @@ def get_ft_team(game_event: GameEvent):
         else:
             print("no fts")
     if game_event.event_type == EventType.JumpBall:
-        if game_event.jumpball_result == JumpballResultType.LOOSE_BALL_FOUL:
+        if game_event.jumpball_result in has_fts_jumpball_results:
             return game_event.winning_team
         else:
             print("no fts")
@@ -630,10 +636,17 @@ def is_last_event_correct(game_events: list[GameEvent]):
             return False
         elif last_event.jumpball_result == JumpballResultType.LOOSE_BALL_FOUL:
             if following_event.event_type is EventType.LiveFreeThrow:
-                if last_event.winning_team != following_event.lineup.offense_team:
-                    last_event.winning_team = following_event.lineup.offense_team
-                    print("corrected jumpball", last_event)
-                return True
+                return last_event.winning_team == following_event.lineup.offense_team
+                    # last_event.winning_team = following_event.lineup.offense_team
+                    # print("corrected jumpball", last_event)
+                    # return True
+            return False
+        elif last_event.jumpball_result == JumpballResultType.CLEAR_PATH_FOUL:
+            if following_event.event_type is EventType.PossessionTry:
+                return last_event.winning_team == following_event.lineup.offense_team
+                    # last_event.winning_team = following_event.lineup.offense_team
+                    # print("corrected jumpball", last_event)
+                    # return True
             return False
 
     elif (last_event.event_type is EventType.PossessionTry):

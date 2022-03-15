@@ -728,6 +728,8 @@ def process_game(game):
                                 double_techs[1].append(next_event.player1_id)
                                 seperate_double_technical = True
                             break
+                        elif isinstance(next_event, enhanced_pbp.FreeThrow) and next_event.is_technical_ft:
+                            break
                         next_event = next_event.next_event
                     if seperate_double_technical:
                         continue
@@ -809,6 +811,12 @@ def process_game(game):
 
                     if number_of_fta_for_foul != 0:
                         game_events[-1].jumpball_result = JumpballResultType.LOOSE_BALL_FOUL
+
+                    if event.is_clear_path_foul:
+                        game_events[-1].jumpball_result = JumpballResultType.CLEAR_PATH_FOUL
+                        possession_after = True
+                        if number_of_fta_for_foul == 0:
+                            print("clear path after jumpball w/ 0 fts", event)
 
                     if isinstance(event.next_event, enhanced_pbp.Turnover) and event.next_event.clock == event.clock:
                         loose_ball_foul_turnover = True
@@ -1416,6 +1424,7 @@ def process_game(game):
                         # not a live free throw
                         # TODO add as a lane violation
                         if event.team_id == offense_team_id:
+                            # add as OFF_LANE_VIOLATION_MISS
                             print("double lane violation w exp fts",
                                   expected_fts, event)
                             print(possession.events)
@@ -1496,7 +1505,9 @@ def process_game(game):
                                 print("lane violation w exp fts",
                                       expected_fts, event)
                                 print(possession.events)
-                                raise Exception(possession, game_events)
+                                # add as OFF_LANE_VIOLATION_MISS
+                                expected_fts -= 1
+                                # raise Exception(possession, game_events)
                                 pass
                             else:
                                 # reshoot because they missed,
