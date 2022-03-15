@@ -1965,11 +1965,16 @@ def process_game(game):
                     if isinstance(prev_event, enhanced_pbp.Rebound) and event.clock == prev_event.clock:
                         # add this as a rebound result, not a try result
                         fouler = event.player1_id
+                        if game_events[-1].lineup.offense_team == event.team_id:
+                            rebound_result = ReboundResult.KICKED_BALL_TURNOVER
+                        else:
+                            rebound_result = ReboundResult.KICKED_BALL_TURNOVER_OREB
+
                         if game_events[-1].event_type == EventType.Rebound:
-                            game_events[-1].rebound_result = ReboundResult.KICKED_BALL_TURNOVER
+                            game_events[-1].rebound_result = rebound_result
                             game_events[-1].fouler = fouler
                         else:
-                            rebound_result_type = ReboundResult.KICKED_BALL_TURNOVER
+                            rebound_result_type = rebound_result
                             has_rebound = True
 
                         try_start = TryStart(

@@ -369,6 +369,7 @@ class ReboundResult(Enum):
     OFFENSIVE_GOALTENDING_TURNOVER = 9
     DOUBLE_LANE_VIOLATION_OFFENSIVE_FOUL = 10
     KICKED_BALL_TURNOVER = 11  # also for travel turnover, fouler
+    KICKED_BALL_TURNOVER_OREB = 17
 
 
 offensive_rebound_results = {
@@ -376,6 +377,7 @@ offensive_rebound_results = {
     ReboundResult.OUT_OREB,
     ReboundResult.LBF_OREB,
     ReboundResult.LBF_NO_FT_OREB,
+    ReboundResult.KICKED_BALL_TURNOVER_OREB,
 }
 
 defensive_rebound_results = {
@@ -637,16 +639,16 @@ def is_last_event_correct(game_events: list[GameEvent]):
         elif last_event.jumpball_result == JumpballResultType.LOOSE_BALL_FOUL:
             if following_event.event_type is EventType.LiveFreeThrow:
                 return last_event.winning_team == following_event.lineup.offense_team
-                    # last_event.winning_team = following_event.lineup.offense_team
-                    # print("corrected jumpball", last_event)
-                    # return True
+                # last_event.winning_team = following_event.lineup.offense_team
+                # print("corrected jumpball", last_event)
+                # return True
             return False
         elif last_event.jumpball_result == JumpballResultType.CLEAR_PATH_FOUL:
             if following_event.event_type is EventType.PossessionTry:
                 return last_event.winning_team == following_event.lineup.offense_team
-                    # last_event.winning_team = following_event.lineup.offense_team
-                    # print("corrected jumpball", last_event)
-                    # return True
+                # last_event.winning_team = following_event.lineup.offense_team
+                # print("corrected jumpball", last_event)
+                # return True
             return False
 
     elif (last_event.event_type is EventType.PossessionTry):
