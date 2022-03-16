@@ -711,35 +711,26 @@ def process_game(game):
                 else:
                     expected_fts += number_of_fta_for_foul
 
-                if event.is_technical:
-                    if seperate_double_technical:
-                        seperate_double_technical = False
-                        continue
-
+                if event.is_technical or event.is_double_technical:
+                    future_tech_count = 0
+                    future_tech_fts = 0
                     next_event = event.next_event
                     while next_event and event.clock == next_event.clock:
-                        if isinstance(next_event, enhanced_pbp.Foul) and (next_event.is_technical or (next_event.is_double_technical and not hasattr(next_event, "player3_id"))):
-                            different_teams = (
-                                (next_event.team_id == road_team and event.team_id == home_team) or
-                                (next_event.team_id == home_team and event.team_id == road_team))
-                            if different_teams:
-                                # actually a double technical
-                                double_techs[0].append(fouler)
-                                double_techs[1].append(next_event.player1_id)
-                                seperate_double_technical = True
-                            break
+                        if isinstance(next_event, enhanced_pbp.Foul) and (next_event.is_technical or next_event.is_double_technical):
+                            future_tech_count += 1
                         elif isinstance(next_event, enhanced_pbp.FreeThrow) and next_event.is_technical_ft:
-                            break
+                            future_tech_fts += 1
                         next_event = next_event.next_event
-                    if seperate_double_technical:
-                        continue
 
                     if out_of_order_tech_foul:
                         out_of_order_tech_foul = False
-                    else:
+                    elif future_tech_fts > future_tech_count:
                         expected_fts += 1
                         expected_tfts += 1
+                else:
+                    possession_after = False
 
+                if event.is_technical:
                     if event.player1_id == 0:
                         # on a coach, ignore, catch in tech free throw
                         technicals[0] += 1
@@ -750,14 +741,9 @@ def process_game(game):
                         technicals[event.team_id][event.player1_id] = 1
                     continue
                 elif event.is_double_technical:
-                    if seperate_double_technical:
-                        seperate_double_technical = False
-                        continue
                     double_techs[0].append(fouler)
                     double_techs[1].append(fouled)
                     continue
-                else:
-                    possession_after = False
 
                 if tmp_foul_after_fts:
                     tmp_offense = defense_team_id
@@ -1348,8 +1334,10 @@ def process_game(game):
                     try_result.result_player2_id = fouled
                     try_result.num_fts = number_of_fta_for_foul
                     if number_of_fta_for_foul != 2:
-                        print("not 2 ft flagrant")
-                        print(event, possession.events)
+                        # TODO add results for 3ft flagrants
+                        pass
+                    #     print("not 2 ft flagrant")
+                    #     print(event, possession.events)
                         # return possession, tries
                     next_try_start.start_type = TryStartType.AFTER_FOUL
 
