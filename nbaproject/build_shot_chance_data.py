@@ -218,7 +218,10 @@ switch_offense_defense_overrides = {
 }
 ignore_correct_event_sequence_overrides = {
     ("0021700862", 167),
-    ("0021700862", 182)
+    ("0021700862", 182),
+    ("0022000056", 478),
+    ("0022000056", 480),
+
 }
 
 ignore_delay_of_game_violation_games = {
@@ -489,7 +492,7 @@ def process_game(game):
                             try_result.num_fts = get_num_fta_from_foul(
                                 out_of_order_and1_foul)
                             if try_result.num_fts != 1:
-                                print("0 ft and1", event,
+                                print("ooof 0 ft and1", event,
                                       out_of_order_and1_foul, possession)
                                 raise Exception(possession, game_events)
                             out_of_order_and1_foul = None
@@ -948,7 +951,25 @@ def process_game(game):
                             f"process foul {event.event_num} as made w foul ft")
                         continue
 
-                if event.is_shooting_foul or event.is_shooting_block_foul:
+                if double_lane_violation:
+                    # jumpball foul
+                    logging.debug(
+                        f"handle jumpball foul, offense: {event.team_id == offense_team_id}, fts: {number_of_fta_for_foul}")
+                    double_lane_violation = False
+                    if event.team_id == offense_team_id:
+                        loose_ball_foul_turnover = True
+                        winning_team = defense_team_id
+                    else:
+                        winning_team = offense_team_id
+                        print("def dbl lane vol foul", event)
+                    if number_of_fta_for_foul != 0:
+                        print("dbl lane vol foul w fts",
+                              number_of_fta_for_foul, event)
+                    has_jumpball = True
+                    try_start = TryStart(
+                        TryStartType.AFTER_FOUL, period_time_left)
+
+                elif event.is_shooting_foul or event.is_shooting_block_foul:
                     next_event = event.next_event
                     while next_event and isinstance(next_event, (enhanced_pbp.Replay, enhanced_pbp.Timeout)):
                         next_event = next_event.next_event
@@ -1009,37 +1030,23 @@ def process_game(game):
                     has_def_try_result = True
 
                 elif event.is_personal_foul and event.team_id == offense_team_id and not tmp_foul_after_fts:
-                    if double_lane_violation:
-                        # this is more like a loose ball foul
-                        double_lane_violation = False
-                        loose_ball_foul_turnover = True
-                        # TODO create GameEvent here
-                        # rebound = create_double_lane_violation_offensive_foul_rebound(
-                        #     event)
-                        # game_events.append(rebound)
-                        raise Exception(
-                            "handle double lane violation foul", event, possession, game_events)
-
-                        try_start = TryStart(
-                            TryStartType.AFTER_FOUL, period_time_left)
-                    else:
-                        # if is_fouling_team_in_penalty(event):
-                        #     try_result.result_type = TryResultType.PENALTY_OFF_FOUL_TURNOVER
-                        # else:
-                        # maybe this is just out of order, check if next event is missed shot
-                        next_event = event.next_event
-                        if isinstance(next_event, enhanced_pbp.FieldGoal) and next_event.team_id == event.team_id:
-                            loose_ball_foul_before_rebound = event
-                            logging.debug(
-                                f"process foul {event.event_num} as loose ball foul before rebound")
-                            continue
-                        try_result.result_type = TryResultType.OFFENSIVE_FOUL_TURNOVER
-                        next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
-                        try_result.result_player1_id = fouler
-                        try_result.result_player2_id = fouled
-                        has_off_try_result = True
-                        offensive_foul_turnover = True
-                        last_oft_event = event
+                    # if is_fouling_team_in_penalty(event):
+                    #     try_result.result_type = TryResultType.PENALTY_OFF_FOUL_TURNOVER
+                    # else:
+                    # maybe this is just out of order, check if next event is missed shot
+                    next_event = event.next_event
+                    if isinstance(next_event, enhanced_pbp.FieldGoal) and next_event.team_id == event.team_id:
+                        loose_ball_foul_before_rebound = event
+                        logging.debug(
+                            f"process foul {event.event_num} as loose ball foul before rebound")
+                        continue
+                    try_result.result_type = TryResultType.OFFENSIVE_FOUL_TURNOVER
+                    next_try_start.start_type = TryStartType.DEAD_BALL_TURNOVER
+                    try_result.result_player1_id = fouler
+                    try_result.result_player2_id = fouled
+                    has_off_try_result = True
+                    offensive_foul_turnover = True
+                    last_oft_event = event
 
                 elif event.is_personal_foul or event.is_personal_block_foul or event.event_action_type == 8:
                     # 8 is punch foul, seem to be just like normal personal
@@ -1514,6 +1521,9 @@ def process_game(game):
                     continue
 
                 elif event.is_lane_violation:
+                    # TODO if a shoot is missing treat this like a ft
+                    # otherwise treat like a rebound result after the ft?
+                    # put at end of fts if no shot missing
                     if double_lane_violation:
                         continue
                     if expected_fts - expected_tfts > 0:
@@ -1586,6 +1596,7 @@ def process_game(game):
                                 print("wrong team lftv", event)
                                 print("just ignoring...")
                             else:
+                                # TODO this is kinda more like a rebound result?
                                 game_events[-2].ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
                                 game_events.pop()
                         elif isinstance(rebound, enhanced_pbp.FreeThrow) and rebound.is_made and rebound.clock == event.clock and game_events[-1].event_type == EventType.LiveFreeThrow:
@@ -2326,7 +2337,7 @@ def process_game(game):
                     event, "player3_id") else None
                 next_event = event
                 while next_event and event.clock == next_event.clock:
-                    if is_jumpball_violation(next_event) or is_jumpball_violation(next_event):
+                    if is_jumpball_violation(next_event) or is_jumpball_turnover(next_event) or isinstance(next_event, enhanced_pbp.Foul):
                         winning_team = road_team if next_event.team_id == home_team else home_team
                     next_event = next_event.next_event
 
