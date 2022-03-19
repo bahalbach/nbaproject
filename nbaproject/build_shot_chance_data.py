@@ -1008,7 +1008,7 @@ def process_game(game):
                     try_result.num_fts = number_of_fta_for_foul
                     has_def_try_result = True
 
-                elif event.is_personal_foul and event.team_id == offense_team_id:
+                elif event.is_personal_foul and event.team_id == offense_team_id and not tmp_foul_after_fts:
                     if double_lane_violation:
                         # this is more like a loose ball foul
                         double_lane_violation = False
