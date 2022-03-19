@@ -46,6 +46,12 @@ def find_free_throw_shooter(event):
     return shooter
 
 
+def time_within(event1, event2, time_dif=0):
+    time1 = seconds_from_time(event1.clock)
+    time2 = seconds_from_time(event2.clock)
+    return abs(time2-time1) <= time_dif
+
+
 def create_double_lane_violation_offensive_foul_rebound(event):
     shooter = find_free_throw_shooter(event)
     shot_type = ShotType.FreeThrowR
@@ -1591,7 +1597,10 @@ def process_game(game):
                     if expected_tfts == 0:
                         rebound = event.previous_event
                         missed_ft = rebound.previous_event
-                        if isinstance(rebound, enhanced_pbp.Rebound) and isinstance(missed_ft, enhanced_pbp.FreeThrow) and not missed_ft.is_made and missed_ft.clock == event.clock and game_events[-2].event_type == EventType.LiveFreeThrow:
+                        if isinstance(rebound, enhanced_pbp.Violation) and rebound.team_id == event.team_id:
+                            # already handled this violation
+                            pass
+                        elif isinstance(rebound, enhanced_pbp.Rebound) and isinstance(missed_ft, enhanced_pbp.FreeThrow) and not missed_ft.is_made and time_within(missed_ft, event, 1) and game_events[-2].event_type == EventType.LiveFreeThrow:
                             if event.team_id != missed_ft.team_id:
                                 print("wrong team lftv", event)
                                 print("just ignoring...")
@@ -1599,7 +1608,7 @@ def process_game(game):
                                 # TODO this is kinda more like a rebound result?
                                 game_events[-2].ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
                                 game_events.pop()
-                        elif isinstance(rebound, enhanced_pbp.FreeThrow) and rebound.is_made and rebound.clock == event.clock and game_events[-1].event_type == EventType.LiveFreeThrow:
+                        elif isinstance(rebound, enhanced_pbp.FreeThrow) and time_within(rebound, event, 1) and game_events[-1].event_type == EventType.LiveFreeThrow:
                             if event.team_id == rebound.team_id:
                                 print("wrong team lftv2", event)
                                 print("just ignoring...")
