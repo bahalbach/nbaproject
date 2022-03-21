@@ -10,6 +10,7 @@ from pbpstats.client import Client
 from pbpstats.resources import enhanced_pbp
 
 from nba_dataclasses import get_foul_lineup, GameEvent, EventType, LiveFreeThrow, LiveFreeThrowResult, JumpBall, is_reboundable, is_last_event_correct, JumpballResultType, get_ft_team
+from nba_dataclasses import expected_offense_team
 
 
 def get_player_names(event):
@@ -84,8 +85,7 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
     event = foul.next_event
     possession_after = foul.is_loose_ball_foul or foul.is_flagrant
     number_of_fta_for_foul = 0
-    total_fts = 0
-    flagrant_fts = 0
+    nonflagrant_fts = 0
     last_ft_is_miss = False
     # other_number_of_fta_for_foul = 0
     seen_ft = 0
@@ -95,15 +95,19 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
             break
         elif event.event_type == 6 and event.is_flagrant:
             # when there's a flagrant at the same time, get
-            total_fts = get_num_fta_from_foul(event)
-            flagrant_fts = get_num_flagrant_fts(event)
+            # flagrant_fts = get_num_flagrant_fts(event)
+            if number_of_fta_for_foul == 0:
+                nonflagrant_fts = get_num_nonflagrant_fts(event)
+            break
             # print("flagrant fts", flagrant_fts)
         # 3 = free throw
         elif event.event_type == 3:
-            if event.is_technical_ft:
+            if event.is_technical_ft or event.is_flagrant_ft:
                 pass
             elif event.foul_that_led_to_ft is foul:
                 seen_ft += 1
+                if event.num_ft_for_trip is None:
+                    print("no fts?", event)
                 number_of_fta_for_foul = max(
                     number_of_fta_for_foul, event.num_ft_for_trip)
                 last_ft_is_miss = not event.is_made
@@ -123,11 +127,11 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
 
         # 7 = violation
         elif (event.event_type == 7 and event.is_lane_violation and event.team_id != foul.team_id):
-            if not last_ft_is_miss and not ((event.next_event.event_type == 5 and event.next_event.is_lane_violation) or (event.next_event.event_type == 7 and event.next_event.is_lane_violation)):
+            if not last_ft_is_miss and not (event.next_event.event_type == 5 and event.next_event.is_lane_violation):
                 seen_ft += 1
                 number_of_fta_for_foul = max(number_of_fta_for_foul, seen_ft)
             pass  # can occur before last ft
-        elif (event.event_type == 7 and event.event_action_type == 6):
+        elif (event.event_type == 7 and (event.event_action_type == 6 or (event.is_lane_violation and event.next_event.event_type == 7 and event.next_event.is_lane_violation))):
             # double lane violation
             seen_ft += 1
             number_of_fta_for_foul = max(number_of_fta_for_foul, seen_ft)
@@ -136,8 +140,9 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
         event = event.next_event
     else:
         pass
+    # print("current event is", event, number_of_fta_for_foul, nonflagrant_fts)
 
-    if max(number_of_fta_for_foul, total_fts-flagrant_fts) == 0:
+    if max(number_of_fta_for_foul, nonflagrant_fts) == 0:
         event = foul.previous_event
         while event and event.clock == clock:
 
@@ -145,10 +150,10 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
                 break
             elif event.event_type == 6 and event.is_flagrant:
                 # when there's a flagrant at the same time, get
-                total_fts = get_num_fta_from_foul(event)
-                flagrant_fts = get_num_flagrant_fts(event)
+                nonflagrant_fts = get_num_nonflagrant_fts(event)
+                # flagrant_fts = get_num_flagrant_fts(event)
             elif event.event_type == 3:
-                if event.is_technical_ft:
+                if event.is_technical_ft or event.is_flagrant_ft:
                     pass
                 elif event.foul_that_led_to_ft is foul:
                     seen_ft += 1
@@ -158,7 +163,7 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
                     # print("ft not right")
                     # raise Exception()
             event = event.previous_event
-    return max(number_of_fta_for_foul, total_fts-flagrant_fts)
+    return max(number_of_fta_for_foul, nonflagrant_fts)
 
 
 def get_num_flagrant_fts(foul):
@@ -167,6 +172,17 @@ def get_num_flagrant_fts(foul):
     number_of_fta_for_foul = 0
     while event and event.clock == clock:
         if event.event_type == 3 and event.is_flagrant_ft:
+            number_of_fta_for_foul = event.num_ft_for_trip
+        event = event.next_event
+    return number_of_fta_for_foul
+
+
+def get_num_nonflagrant_fts(foul):
+    clock = foul.clock
+    event = foul.next_event
+    number_of_fta_for_foul = 0
+    while event and event.clock == clock:
+        if event.event_type == 3 and not event.is_flagrant_ft and not event.is_technical_ft:
             number_of_fta_for_foul = event.num_ft_for_trip
         event = event.next_event
     return number_of_fta_for_foul
@@ -442,7 +458,6 @@ def process_game(game):
             has_off_try_result = False
             has_def_try_result = False
             has_held_ball_result = False
-            has_defense_held_ball_result = False
 
             try_result = TryResult()
             next_try_start = TryStart(
@@ -673,8 +688,12 @@ def process_game(game):
                 if expected_fts == 0 and not event.is_technical_ft:
                     if possession_after:
                         possession_after = False
+                        logging.debug(
+                            f"possession after so not reboundable")
                     else:
                         event.is_reboundable = True
+                        logging.debug(
+                            f"reboundable")
                         last_reboundable_shot = event
                         if offense_team_id != event.team_id:
                             print("wrong offense team for ft", event)
@@ -718,7 +737,8 @@ def process_game(game):
                                 try_start = TryStart(
                                     TryStartType.MADE_BASKET,  period_time_left)
                 else:
-
+                    logging.debug(
+                        f"more fts left so not reboundable")
                     ft = FreeThrow(event.player1_id, event.is_made,
                                    expected_fts, possession_after, score_margin)
                     free_throws.append(ft)
@@ -2356,6 +2376,9 @@ def process_game(game):
                         try_result.result_type = TryResultType.MISTAKE_CALL
                         mistake_call = True
                         has_held_ball_result = True
+                        original_offensive_team = expected_offense_team(
+                            game_events)
+                        prev_event = event
 
                 elif event.event_action_type == 0:
                     # do nothing replay?
@@ -2440,15 +2463,6 @@ def process_game(game):
 
                     # last try ends with a held ball
                     else:
-                        # need to get that lineup, not same as jump ball lineup
-                        # current_time_events = event.get_all_events_at_current_time()
-                        # for current_time_event in current_time_events:
-                        #     if current_time_event.previous_event not in current_time_events:
-                        #         prev_event = current_time_event.previous_event
-                        #         break
-                        # if prev_event is None:
-                        #     print("no prev event for jumpball", event)
-                        #     raise Exception(possession, game_events)
                         prev_event = event.previous_event
                         if is_reboundable(game_events[-2]) and game_events[-1].event_type == EventType.Rebound and isinstance(prev_event, enhanced_pbp.Rebound) and prev_event.is_placeholder:
                             if not hasattr(last_reboundable_shot, "has_been_rebounded"):
@@ -2476,21 +2490,28 @@ def process_game(game):
                                                      period_time_left)
 
                         else:
-                            # get right lineup
-                            next_event = event.next_event
-                            while next_event and next_event.clock == event.clock:
-                                if isinstance(next_event, enhanced_pbp.Turnover):
-                                    if winning_team == defense_team_id:
-                                        has_held_ball_result = True
-                                    else:
-                                        has_defense_held_ball_result = True
-                                    break
-                                next_event = next_event.next_event
-                            else:
-                                if winning_team == offense_team_id:
-                                    has_held_ball_result = True
+                            # get right lineup, not same as jump ball lineup
+                            prev_event = event.previous_event
+                            while prev_event.clock == event.clock:
+                                prev_event = prev_event.previous_event
+                            original_offensive_team = expected_offense_team(
+                                game_events)
+                            if original_offensive_team is None:
+                                next_event = event.next_event
+                                while next_event and next_event.clock == event.clock:
+                                    if isinstance(next_event, enhanced_pbp.Turnover):
+                                        if winning_team == defense_team_id:
+                                            original_offensive_team = offense_team_id
+                                        else:
+                                            original_offensive_team = defense_team_id
+                                        break
+                                    next_event = next_event.next_event
                                 else:
-                                    has_defense_held_ball_result = True
+                                    if winning_team == offense_team_id:
+                                        original_offensive_team = offense_team_id
+                                    else:
+                                        original_offensive_team = defense_team_id
+                            has_held_ball_result = True
                             try_result.result_type = TryResultType.HELD_BALL
                             try_result.result_player1_id = player1
                             try_result.result_player2_id = player2
@@ -2503,7 +2524,7 @@ def process_game(game):
                             else:
                                 next_try_start.start_type = TryStartType.OUT_OF_BOUNDS
 
-            if has_off_try_result or has_def_try_result or has_held_ball_result or has_defense_held_ball_result:
+            if has_off_try_result or has_def_try_result or has_held_ball_result:
                 logging.debug(
                     f"process try result {event.event_num}: {try_result.result_type}")
                 if start_of_game_or_overtime:
@@ -2529,11 +2550,18 @@ def process_game(game):
                         print(event, possession.events)
                         raise Exception(possession, game_events)
 
-                if (has_off_try_result and event.team_id != offense_team_id) or (has_def_try_result and event.team_id == offense_team_id) or (has_defense_held_ball_result):
+                if (has_off_try_result and event.team_id != offense_team_id) or (has_def_try_result and event.team_id == offense_team_id):
                     lineup = get_foul_lineup(
                         event, defense_team_id)
                     offense_is_home = defense_team_id == home_team
                     fouls_to_give = event.previous_event.fouls_to_give[offense_team_id]
+                    in_penalty = fouls_to_give == 0
+                elif has_held_ball_result:
+                    lineup = get_foul_lineup(
+                        prev_event, original_offensive_team)
+                    offense_is_home = original_offensive_team == home_team
+                    fouls_to_give = prev_event.fouls_to_give[
+                        road_team if offense_is_home else home_team]
                     in_penalty = fouls_to_give == 0
                 else:
                     lineup = get_foul_lineup(event, offense_team_id)

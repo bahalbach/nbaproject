@@ -590,25 +590,37 @@ def get_ft_team(game_event: GameEvent):
             return game_event.winning_team
         else:
             print("no fts")
-# def expected_offense_team(game_events: list[GameEvent], home_team, road_team):
-#     last_event = game_events[-1]
-#     if last_event.event_type == EventType.PossessionTry:
-#         if last_event in reboundable_results | jump_ball_results:
-#             print("unknown offensive team")
-#         if last_event in same_team_results | same_team_live_free_throw_results:
-#             same_team = True
-#         else:
-#             same_team = False
-#     if last_event.event_type == EventType.LiveFreeThrow:
-#         if last_event in same_team_ft_results | live_ft_ft_results:
-#             same_team = True
-#         else:
-#             same_team = False
 
-#     if same_team:
-#         return home_team if last_event.lineup.offense_team == home_team else road_team
-#     else:
-#         return home_team if last_event.lineup.offense_team != home_team else road_team
+
+def expected_offense_team(game_events: list[GameEvent]):
+    last_event = game_events[-1]
+    if last_event.event_type == EventType.PossessionTry:
+        if last_event.try_result.result_type in reboundable_results | jump_ball_results:
+            print("unknown offensive team")
+        if last_event.try_result.result_type in same_team_results | same_team_live_free_throw_results:
+            same_team = True
+        else:
+            same_team = False
+    elif last_event.event_type == EventType.LiveFreeThrow:
+        if last_event.ft_result in same_team_ft_results | live_ft_ft_results:
+            same_team = True
+        else:
+            same_team = False
+
+    elif last_event.event_type == EventType.Rebound:
+        if last_event.rebound_result in offensive_rebound_results:
+            same_team = True
+        elif last_event.rebound_result in defensive_rebound_results:
+            same_team = False
+        else:
+            print("unknown offensive team")
+    else:
+        return None
+
+    if same_team:
+        return last_event.lineup.offense_team
+    else:
+        return last_event.lineup.defense_team
 
 
 def is_last_event_correct(game_events: list[GameEvent]):
