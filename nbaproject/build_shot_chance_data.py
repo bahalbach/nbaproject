@@ -123,7 +123,7 @@ def get_num_fta_from_foul(foul: enhanced_pbp.Foul):
 
         # 7 = violation
         elif (event.event_type == 7 and event.is_lane_violation and event.team_id != foul.team_id):
-            if not last_ft_is_miss and not (event.next_event.event_type == 5 and event.next_event.is_lane_violation):
+            if not last_ft_is_miss and not ((event.next_event.event_type == 5 and event.next_event.is_lane_violation) or (event.next_event.event_type == 7 and event.next_event.is_lane_violation)):
                 seen_ft += 1
                 number_of_fta_for_foul = max(number_of_fta_for_foul, seen_ft)
             pass  # can occur before last ft
@@ -238,6 +238,26 @@ ignore_correct_event_sequence_overrides = {
 ignore_delay_of_game_violation_games = {
     "0021500628",
     "0021600287",
+}
+missing_ge_1 = GameEvent(
+    lineup=FoulLineup(
+        offense_team=1610612755,
+        offense_players=(2730, 201588, 1627788, 1629003, 1630178),
+        offense_fouls=(1, 0, 0, 1, 1),
+        defense_team=1610612748,
+        defense_players=(2738, 2772, 201609, 1628389, 1629639),
+        defense_fouls=(1, 0, 1, 1, 0)),
+    offense_is_home=True,
+    fouls_to_give=3,
+    in_penalty=False,
+    score_margin=-22,
+    period=4,
+    period_time_left=499,
+    event_type=EventType.PossessionTry)
+missing_ge_1.try_result = TryResult(TryResultType.OTHER)
+
+missing_possessions = {
+    ("0022001050", 488):  missing_ge_1,
 }
 
 
@@ -377,6 +397,9 @@ def process_game(game):
             # mistake_call = False
 
         for event in possession.events:
+            if (event.game_id, event.event_num) in missing_possessions:
+                game_events.append(
+                    missing_possessions[(event.game_id, event.event_num)])
 
             if has_out_of_order_live_free_throw:
                 if check_correct_team and not is_last_event_correct(game_events):
@@ -1456,9 +1479,15 @@ def process_game(game):
                     if double_lane_violation:
                         continue
                     if expected_fts == 0:
-                        print("unhandled non ft double lane violation", event)
-                        print(possession.events)
-                        raise Exception(possession, game_events)
+                        if game_events[-1].event_type == EventType.LiveFreeThrow:
+                            print("dbl lane vio after",
+                                  game_events[-1].ft_result)
+                            double_lane_violation = True
+                            continue
+                        else:
+                            print("unhandled non ft double lane violation", event)
+                            print(possession.events)
+                            raise Exception(possession, game_events)
 
                     if expected_fts != 1:
                         # not a live free throw

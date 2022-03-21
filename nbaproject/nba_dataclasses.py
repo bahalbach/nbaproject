@@ -261,6 +261,7 @@ same_team_results = {
 }
 
 other_team_results = {
+    TryResultType.OTHER,
     TryResultType.MADE_SHOT,
     TryResultType.DEF_GOALTEND_SHOT,
 
