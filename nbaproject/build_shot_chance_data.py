@@ -283,19 +283,366 @@ def process_season(season, first_game=0):
 
     games: list[GamePossessionInfo] = []
     count = 0
+    game_processor = GameProcessor()
     for game_dict in season.schedule.games.final_games[first_game:]:
         game_id = game_dict['game_id']
         # print("processing game", game_id)
 
         game = possession_client.Game(game_id)
 
-        game_possession_info = process_game(game)
+        game_possession_info = game_processor.process_game(game)
         games.append(game_possession_info)
 
         count += 1
         if count % 100 == 0:
             print("prcessed", count, "games")
     return games
+
+
+class GameProcessor:
+    def __init__(self) -> None:
+        pass
+
+    def process_game(self, game):
+        logging.shutdown()
+        logging.basicConfig(filename='build_shot_chance.log', filemode="w",
+                            encoding='utf-8', level=logging.DEBUG)
+        logging.info(f"game {game.game_id}")
+
+        self.home_team = game.boxscore.team_items[0]['team_id']
+        self.road_team = game.boxscore.team_items[1]['team_id']
+        self.initialize_state()
+        possessions = game.possessions.items
+        for possession in possessions:
+            self.set_possession_stats(possession)
+            for event in possession.events:
+                if (event.game_id, event.event_num) in missing_possessions:
+                    self.add_game_event(
+                        missing_possessions[(event.game_id, event.event_num)])
+
+                # if has_out_of_order_live_free_throw:
+                #     self.add_out_of_order_live_free_throw()
+                #     has_out_of_order_live_free_throw = False
+
+                if (event.game_id, event.event_num) in switch_offense_defense_overrides:
+                    self.offense_team_id, self.defense_team_id = self.defense_team_id, self.offense_team_id
+                if (event.game_id, event.event_num) in ignore_correct_event_sequence_overrides:
+                    self.check_correct_team = not self.check_correct_team
+
+                self.set_event_stats(event)
+                self.process_event(event)
+
+    def initialize_state(self):
+        self.check_correct_team = True
+
+        self.game_events: list[GameEvent] = []
+        self.free_throws: list[FreeThrow] = []
+        self.delay_of_games = {home_team: 0, road_team: 0, 0: 0}
+        self.team_techs = {home_team: 0, road_team: 0, 0: 0}
+        self.technicals = {home_team: {}, road_team: {}, 0: 0}
+        self.missed_techs = 0
+        self.double_techs = ([], [])
+
+        self.expected_fts = 0
+        self.expected_tfts = 0
+        self.missing_delay_of_game_tech = False
+        self.seperate_double_technical = False
+        self.out_of_order_tech_foul = False
+        self.expected_rebounds = 0
+
+        self.possession_after = False
+        self.last_possession_ending_event = None
+        self.start_of_period = True
+        self.start_of_game_or_overtime = True
+
+        self.and1 = False
+        self.goaltended = False
+
+        self.offensive_foul_turnover = False
+        self.loose_ball_foul_rebound = False
+        self.loose_ball_foul_turnover = False
+        self.handled_jumpball_turnover = False
+
+        self.double_lane_violation = False
+        self.handled_off_lane_violation_turnover = False
+
+        self.mistake_call = False
+        self.missing_start = None
+
+        self.out_of_order_and1_foul = None
+        self.out_of_order_shot_rebound = False
+        self.out_of_order_jumpball_rebound = False
+        self.goaltend_before_shot = False
+        self.foul_after_fts = None
+        self.out_of_order_live_free_throw = None
+        self.has_out_of_order_live_free_throw = False
+        self.has_out_of_order_foul_rebound = False
+        self.out_of_order_foul_rebound = None
+        self.loose_ball_foul_before_rebound = None
+
+        self.flagrant_and_foul = False
+
+    def set_possession_stats(self, possession):
+        self.current_possession = possession
+        self.possession_start_time = seconds_from_time(possession.start_time)
+        self.seconds_left = max(4-possession.period, 0) * 12 * 60
+        self.seconds_left += possession_start_time
+
+        self.score_margin = possession.start_score_margin
+        self.offense_team_id = possession.offense_team_id
+        self.defense_team_id = road_team if offense_team_id == home_team else home_team
+
+        self.possible_missing_start = None
+        self.loose_ball_foul_rebound_no_turnover = False
+
+        if self.offensive_foul_turnover:
+            print("unhandled offensive foul turnover pos",
+                  possession.previous_possession.events)
+            raise Exception(possession, self.game_events)
+
+        if self.loose_ball_foul_turnover:
+            print("unhandled loose ball foul turnover",
+                  possession.previous_possession.events)
+            self.loose_ball_foul_turnover = False
+            # raise Exception(possession, game_events)
+
+        if self.double_lane_violation:
+            # double lane violation, no jumpball because the free throw was not to remain in play, just can ignore
+            # print("double lane without jumpball", possession.events)
+            self.double_lane_violation = False
+
+        if self.mistake_call:
+            # mistake_call = False
+            print("unresolved mistake call", possession.events)
+
+    def set_event_stats(self, event):
+        self.current_event = event
+        self.period_time_left = seconds_from_time(event.clock)
+        self.set_event_stats(event)
+
+        self.process_jumpball = False
+
+        self.has_off_try_result = False
+        self.has_def_try_result = False
+        self.has_held_ball_result = False
+
+        self.try_result = TryResult()
+        self.next_try_start = TryStart(
+            None, period_time_left)
+
+        self.has_rebound = False
+        self.rebounder = None
+        self.fouler = None
+        self.num_fts = 0
+
+        self.has_live_free_throw = False
+
+        self.has_jumpball = False
+        self.winning_team = None
+
+    def add_game_event(self, game_event):
+        self.game_events.append(game_event)
+        if not self.check_correct_team or is_last_event_correct(self.game_events):
+            return True
+        else:
+            logging.error(
+                f"error when processing game events {self.current_event}")
+            raise Exception(self.current_possession, self.game_events)
+
+    def add_out_of_order_live_free_throw(self):
+        if out_of_order_live_free_throw is None:
+            logging.error("no out of order ft", self.current_event)
+            raise Exception(self.current_possession, self.game_events)
+        self.game_events.append(self.out_of_order_live_free_throw)
+        self.out_of_order_live_free_throw = None
+
+        if self.out_of_order_foul_rebound is not None:
+            self.add_game_event(out_of_order_foul_rebound)
+            self.out_of_order_foul_rebound = None
+
+    def process_event(self, event):
+        if isinstance(event, enhanced_pbp.FieldGoal):
+            self.process_field_goal(event)
+        elif isinstance(event, enhanced_pbp.FreeThrow):
+            self.process_free_throw(event)
+        elif isinstance(event, enhanced_pbp.Rebound):
+            self.process_rebound(event)
+        elif isinstance(event, enhanced_pbp.Foul):
+            self.process_foul(event)
+        elif isinstance(event, enhanced_pbp.Violation):
+            self.process_violation(event)
+        elif isinstance(event, enhanced_pbp.Turnover):
+            self.process_turnover(event)
+        elif isinstance(event, enhanced_pbp.Substitution):
+            # just ignore
+            pass
+        elif isinstance(event, enhanced_pbp.StartOfPeriod):
+            self.process_start_of_period(event)
+        elif isinstance(event, enhanced_pbp.EndOfPeriod):
+            self.process_end_of_period(event)
+        elif isinstance(event, enhanced_pbp.Ejection):
+            pass
+
+    def process_field_goal(self, event):
+        self.goaltended = False
+        if self.goaltend_before_shot:
+            self.goaltend_before_shot = False
+            self.goaltended = True
+            self.goaltender = event.previous_event.player1_id
+        else:
+            next_event = event.next_event
+            if isinstance(next_event, enhanced_pbp.Violation) and next_event.is_goaltend_violation:
+                self.goaltended = True
+                self.goaltender = next_event.player1_id
+            else:
+                while next_event and next_event.clock == event.clock:
+                    if isinstance(next_event, enhanced_pbp.Violation) and next_event.is_goaltend_violation:
+                        self.goaltended = True
+                        self.goaltender = next_event.player1_id
+                        break
+                    elif isinstance(next_event, (enhanced_pbp.FieldGoal, enhanced_pbp.FreeThrow, enhanced_pbp.Rebound)):
+                        break
+                    next_event = next_event.next_event
+
+        event.is_reboundable = False
+        if event.is_made:
+            assister = event.player2_id if hasattr(
+                event, 'player2_id') else None
+            if event.is_and1:
+                is_and1 = True
+            else:
+                is_and1 = False
+                next_event = event.next_event
+                if isinstance(next_event, enhanced_pbp.Foul) and (next_event.is_shooting_foul or next_event.is_shooting_block_foul or next_event.is_flagrant or next_event.is_personal_foul or next_event.is_personal_block_foul) and next_event.player3_id == event.player1_id and next_event.clock == event.clock:
+                    is_and1 = True
+                # for cte in event.get_all_events_at_current_time():
+                #     if isinstance(cte, enhanced_pbp.Foul) and (cte.is_shooting_foul or cte.is_flagrant) and cte.player3_id == event.player1_id:
+                #         if not is_and1:
+                #             print("and1?", possession.period,
+                #                   event, possession.events)
+                #         is_and1 = True
+                #         break
+
+            if is_and1 or out_of_order_and1_foul is not None:
+                if goaltended:
+                    try_result.result_type = TryResultType.GOALTENDED_AND1
+                    try_result.result_player4_id = goaltender
+                else:
+                    try_result.result_type = TryResultType.AND1
+                try_result.result_player1_id = event.player1_id
+                try_result.result_player2_id = assister
+                and1 = True
+                if out_of_order_and1_foul is not None:
+                    and1 = False
+                    try_result.result_player3_id = out_of_order_and1_foul.player1_id
+                    try_result.num_fts = get_num_fta_from_foul(
+                        out_of_order_and1_foul)
+                    if try_result.num_fts != 1:
+                        print("ooof 0 ft and1", event,
+                                out_of_order_and1_foul, possession)
+                        raise Exception(possession, game_events)
+                    out_of_order_and1_foul = None
+            else:
+                if goaltended:
+                    try_result.result_type = TryResultType.DEF_GOALTEND_SHOT
+                    try_result.result_player1_id = event.player1_id
+                    try_result.result_player2_id = assister
+                    try_result.result_player3_id = goaltender
+                else:
+                    try_result.result_type = TryResultType.MADE_SHOT
+                    try_result.result_player1_id = event.player1_id
+                    try_result.result_player2_id = assister
+        else:
+            event.is_reboundable = True
+            last_reboundable_shot = event
+            if event.is_blocked:
+                # if goaltended:
+                # print("goaltended blocked",
+                #       event, possession.events)
+                # return possession
+                # the shot ended up being counted as missed, so treat as normal blocked shot
+                try_result.result_type = TryResultType.BLOCKED_SHOT
+                try_result.result_player1_id = event.player1_id
+                try_result.result_player3_id = event.player3_id
+            else:
+                # offensive goaltending is a turnover
+                try_result.result_type = TryResultType.MISSED_SHOT
+                try_result.result_player1_id = event.player1_id
+
+                try_result.shot_type = shot_type_value[event.shot_type]
+                # TODO get shot description info
+                try_result.shot_X = event.locX if hasattr(
+                    event, "locX") else None
+                try_result.shot_Y = event.locY if hasattr(
+                    event, "locY") else None
+                try_result.shot_distance = event.distance
+                has_off_try_result = True
+
+                if event.is_made and not is_and1:
+                    next_try_start.start_type = TryStartType.MADE_BASKET
+
+                if is_reboundable(game_events[-1]) or (try_start.start_type is None and missing_start is None and possible_missing_start is None):
+                    if not is_reboundable(game_events[-1]) or not (try_start.start_type is None and missing_start is None and possible_missing_start is None):
+                        print("disagreement for ooor", is_reboundable(game_events[-1]), (
+                            try_start.start_type is None and missing_start is None and possible_missing_start is None), event)
+                    # check if the rebound is after the shot
+                    next_event = event.next_event
+                    if isinstance(next_event, enhanced_pbp.Rebound) and next_event.oreb:
+                        shot_type = shot_type_value[last_shot_or_ft.shot_type]
+                        start_player1_id = next_event.player1_id
+                        start_player2_id = last_shot_or_ft.player1_id
+                        try_start = TryStart(TryStartType.OFF_REBOUND, period_time_left,
+                                             start_player1_id, start_player2_id, rebound_shot_type=shot_type)
+                        out_of_order_shot_rebound = True
+
+                        out_of_order_rebound_game_event = GameEvent(
+                            lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.Rebound)
+                        out_of_order_rebound_game_event.shooter = last_shot_or_ft.player1_id
+                        out_of_order_rebound_game_event.shot_type = shot_type
+                        out_of_order_rebound_game_event.rebound_result = ReboundResult.OFF_REBOUND
+                        out_of_order_rebound_game_event.rebounder = next_event.player1_id
+                        out_of_order_rebound_game_event.fouler = None
+                        game_events.append(out_of_order_rebound_game_event)
+
+                        if not is_last_event_correct(game_events):
+                            print("not matching events after out of order rebound",
+                                  event)
+                            raise Exception(possession, game_events)
+                    else:
+                        print("missing rebound? ooor", event)
+
+                last_shot = event
+                last_shot_or_ft = event
+
+    def process_rebound(self, event):
+        pass
+
+    def process_foul(self, event):
+        pass
+
+    def process_free_throw(self, event):
+        pass
+
+    def process_turnover(self, event):
+        pass
+
+    def process_violation(self, event):
+        pass
+
+    def process_jumpball(self, event):
+        pass
+
+    def process_timeout(self, event):
+        pass
+
+    def process_replay(self, event):
+        pass
+
+    def process_start_of_period(self, event):
+        pass
+
+    def process_end_of_period(self, event):
+        pass
 
 # class GamePossessions:
 #     def __init__(self, game) -> None:
