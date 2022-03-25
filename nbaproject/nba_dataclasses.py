@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Union
 from collections import defaultdict, namedtuple
+import re
 from tkinter.font import NORMAL
 
 
@@ -299,10 +301,24 @@ other_team_results = {
     TryResultType.FOUL_AND_OFFENSE_FLAGRANT,
 }
 
+made_shot_results = {
+    TryResultType.MADE_SHOT,
+    TryResultType.DEF_GOALTEND_SHOT,
+}
+
+live_ball_turnover_results = {
+    TryResultType.LOST_BALL_STEAL,
+    TryResultType.BAD_PASS_STEAL,
+}
+
 jump_ball_results = {
     TryResultType.HELD_BALL,
     TryResultType.MISTAKE_CALL,
 }
+
+# groupings
+# points scored, fts earned, next_try: (rebound, ft, same_team, live_ball_turnover, dead_ball_turnover, made_basket, jumpball)
+#
 
 
 class JumpballResultType(Enum):
@@ -337,20 +353,6 @@ class ShotType(Enum):
 
 shot_type_value = {"AtRim": 1, "ShortMidRange": 2,
                    "LongMidRange": 3, "Arc3": 4,  "Corner3": 5, "FT": 7, "FreeThrowNR": 6, "FreeThrowR": 7}
-
-
-@dataclass
-class TryResult:
-    result_type: TryResultType = None
-    result_player1_id: int = None
-    result_player2_id: int = None
-    result_player3_id: int = None
-    result_player4_id: int = None
-    shot_type: int = None
-    shot_distance: int = None
-    shot_X: int = None
-    shot_Y: int = None
-    num_fts: int = 0
 
 
 class ReboundResult(Enum):
@@ -501,19 +503,7 @@ class EventType(Enum):
 
 
 @dataclass
-class GameEvent:
-    lineup: FoulLineup
-    offense_is_home: bool
-    fouls_to_give: int
-    in_penalty: bool
-    score_margin: int
-    period: int
-    period_time_left: int
-    event_type: EventType
-
-
-@dataclass
-class Rebound(GameEvent):
+class Rebound:
     shooter: int
     shot_type: ShotType
     rebound_result: ReboundResult
@@ -523,16 +513,24 @@ class Rebound(GameEvent):
 
 
 @dataclass
-class PossessionTry(GameEvent):
-    try_start: TryStart
-    try_result: TryResult = None
-    rebound: Rebound = None
+class PossessionTry:
+    result_type: TryResultType = None
+    result_player1_id: int = None
+    result_player2_id: int = None
+    result_player3_id: int = None
+    result_player4_id: int = None
+    shot_type: int = None
+    shot_distance: int = None
+    shot_X: int = None
+    shot_Y: int = None
+    num_fts: int = 0
+    try_start: TryStart = None
 
 
 @dataclass
-class JumpBall(GameEvent):
+class JumpBall:
     winning_team: int
-    jumpball_result: JumpballResultType
+    jumpball_result: JumpballResultType = JumpballResultType.NORMAL
 
 
 @dataclass
@@ -547,46 +545,61 @@ class FreeThrow:
 
 
 @dataclass
-class LiveFreeThrow(GameEvent):
+class LiveFreeThrow:
     ft_result: LiveFreeThrowResult
     shooter: int
-    goaltender: int
-    fouler: int
-    fouled: int
+    goaltender: int = None
+    fouler: int = None
+    fouled: int = None
+
+
+@dataclass
+class GameEvent:
+    lineup: FoulLineup
+    offense_is_home: bool
+    fouls_to_give: int
+    in_penalty: bool
+    score_margin: int
+    period: int
+    period_time_left: int
+    event_type: EventType
+    result: Union[PossessionTry, Rebound, LiveFreeThrow, JumpBall] = None
 
 
 def is_reboundable(game_event: GameEvent):
+    result = game_event.result
     if game_event.event_type == EventType.PossessionTry:
-        return game_event.try_result.result_type in reboundable_results
+        return result.result_type in reboundable_results
     if game_event.event_type == EventType.LiveFreeThrow:
-        return game_event.ft_result in rebound_ft_results
+        return result.ft_result in rebound_ft_results
     return False
 
 
 def get_ft_team(game_event: GameEvent):
+    result = game_event.result
     if game_event.event_type == EventType.PossessionTry:
-        if game_event.try_result.result_type in has_offensive_fts_results:
+        if result.result_type in has_offensive_fts_results:
             return game_event.lineup.offense_team
-        elif game_event.try_result.result_type in has_defensive_fts_results:
+        elif result.result_type in has_defensive_fts_results:
             return game_event.lineup.defense_team
         else:
             print("no fts")
     if game_event.event_type == EventType.LiveFreeThrow:
-        if game_event.ft_result in has_offensive_fts_ft_results:
+        if result.ft_result in has_offensive_fts_ft_results:
             return game_event.lineup.offense_team
         # elif game_event.ft_result in has_defensive_fts_ft_results:
         #     return game_event.lineup.defense_team
         else:
             print("no fts")
     if game_event.event_type == EventType.Rebound:
-        if game_event.rebound_result in has_offensive_fts_rb_results:
+        if result.rebound_result in has_offensive_fts_rb_results:
             return game_event.lineup.offense_team
-        elif game_event.rebound_result in has_defensive_fts_rb_results:
+        elif result.rebound_result in has_defensive_fts_rb_results:
             return game_event.lineup.offense_team
         else:
             print("no fts")
     if game_event.event_type == EventType.JumpBall:
-        if game_event.jumpball_result in has_fts_jumpball_results:
+        if result.jumpball_result in has_fts_jumpball_results:
             return game_event.winning_team
         else:
             print("no fts")
@@ -594,23 +607,24 @@ def get_ft_team(game_event: GameEvent):
 
 def expected_offense_team(game_events: list[GameEvent]):
     last_event = game_events[-1]
+    result = last_event.result
     if last_event.event_type == EventType.PossessionTry:
-        if last_event.try_result.result_type in reboundable_results | jump_ball_results:
+        if result.result_type in reboundable_results | jump_ball_results:
             print("unknown offensive team")
-        if last_event.try_result.result_type in same_team_results | same_team_live_free_throw_results:
+        if result.result_type in same_team_results | same_team_live_free_throw_results:
             same_team = True
         else:
             same_team = False
     elif last_event.event_type == EventType.LiveFreeThrow:
-        if last_event.ft_result in same_team_ft_results | live_ft_ft_results:
+        if result.ft_result in same_team_ft_results | live_ft_ft_results:
             same_team = True
         else:
             same_team = False
 
     elif last_event.event_type == EventType.Rebound:
-        if last_event.rebound_result in offensive_rebound_results:
+        if result.rebound_result in offensive_rebound_results:
             same_team = True
-        elif last_event.rebound_result in defensive_rebound_results:
+        elif result.rebound_result in defensive_rebound_results:
             same_team = False
         else:
             print("unknown offensive team")
@@ -623,13 +637,21 @@ def expected_offense_team(game_events: list[GameEvent]):
         return last_event.lineup.defense_team
 
 
+# def check_players_in_correct_lineup(game_event: GameEvent):
+#     return True
+
+
 def is_last_event_correct(game_events: list[GameEvent]):
+    # if not check_players_in_correct_lineup(game_events[-1]):
+    #     return False
+
     if len(game_events) <= 1:
         return True
     elif len(game_events) == 2:
         return game_events[1].event_type is EventType.JumpBall
 
     last_event = game_events[-2]
+    result = last_event.result
     following_event = game_events[-1]
     if last_event is None or following_event is None:
         print("null game events")
@@ -642,60 +664,60 @@ def is_last_event_correct(game_events: list[GameEvent]):
             return False
 
     if (last_event.event_type is EventType.JumpBall):
-        if last_event.jumpball_result == JumpballResultType.NORMAL:
+        if result.jumpball_result == JumpballResultType.NORMAL:
             if following_event.event_type is EventType.PossessionTry:
-                if last_event.winning_team != following_event.lineup.offense_team:
-                    last_event.winning_team = following_event.lineup.offense_team
-                    print("corrected jumpball to", last_event.winning_team)
+                if result.winning_team != following_event.lineup.offense_team:
+                    result.winning_team = following_event.lineup.offense_team
+                    print("corrected jumpball to", result.winning_team)
                 return True
             return False
-        elif last_event.jumpball_result == JumpballResultType.LOOSE_BALL_FOUL:
+        elif result.jumpball_result == JumpballResultType.LOOSE_BALL_FOUL:
             if following_event.event_type is EventType.LiveFreeThrow:
-                return last_event.winning_team == following_event.lineup.offense_team
+                return result.winning_team == following_event.lineup.offense_team
                 # last_event.winning_team = following_event.lineup.offense_team
                 # print("corrected jumpball", last_event)
                 # return True
             return False
-        elif last_event.jumpball_result == JumpballResultType.CLEAR_PATH_FOUL:
+        elif result.jumpball_result == JumpballResultType.CLEAR_PATH_FOUL:
             if following_event.event_type is EventType.PossessionTry:
-                return last_event.winning_team == following_event.lineup.offense_team
+                return result.winning_team == following_event.lineup.offense_team
                 # last_event.winning_team = following_event.lineup.offense_team
                 # print("corrected jumpball", last_event)
                 # return True
             return False
 
     elif (last_event.event_type is EventType.PossessionTry):
-        if last_event.try_result.result_type in same_team_results:
+        if result.result_type in same_team_results:
             return following_event.event_type is EventType.PossessionTry and last_event.lineup.offense_team == following_event.lineup.offense_team
-        elif last_event.try_result.result_type in other_team_results:
+        elif result.result_type in other_team_results:
             return (following_event.event_type is EventType.PossessionTry) and last_event.lineup.offense_team != following_event.lineup.offense_team
-        elif last_event.try_result.result_type in reboundable_results:
+        elif result.result_type in reboundable_results:
             return (following_event.event_type is EventType.Rebound)
-        elif last_event.try_result.result_type in same_team_live_free_throw_results:
+        elif result.result_type in same_team_live_free_throw_results:
             return (following_event.event_type is EventType.LiveFreeThrow) and last_event.lineup.offense_team == following_event.lineup.offense_team
-        elif last_event.try_result.result_type in other_team_live_free_throw_results:
+        elif result.result_type in other_team_live_free_throw_results:
             return (following_event.event_type is EventType.LiveFreeThrow) and last_event.lineup.offense_team != following_event.lineup.offense_team
-        elif last_event.try_result.result_type in jump_ball_results:
+        elif result.result_type in jump_ball_results:
             return (following_event.event_type is EventType.JumpBall)
         else:
             print("unknown try result type")
             raise Exception(last_event, following_event)
 
     elif (last_event.event_type is EventType.Rebound):
-        if last_event.rebound_result in offensive_rebound_results:
+        if result.rebound_result in offensive_rebound_results:
             if (following_event.event_type is EventType.PossessionTry):
                 return game_events[-3].lineup.offense_team == following_event.lineup.offense_team
             return False
-        elif last_event.rebound_result in defensive_rebound_results:
+        elif result.rebound_result in defensive_rebound_results:
             if (following_event.event_type is EventType.PossessionTry):
                 return game_events[-3].lineup.offense_team != following_event.lineup.offense_team
             return False
-        elif last_event.rebound_result in live_ft_rebound_results:
+        elif result.rebound_result in live_ft_rebound_results:
             if (following_event.event_type is EventType.LiveFreeThrow):
                 return True
                 # return game_events[-2].lineup.offense_team == following_event.lineup.offense_team
             return False
-        elif last_event.rebound_result in jumpball_rebound_results:
+        elif result.rebound_result in jumpball_rebound_results:
             if (following_event.event_type is EventType.JumpBall):
                 return True
                 # return game_events[-2].lineup.offense_team == following_event.lineup.offense_team
@@ -705,25 +727,25 @@ def is_last_event_correct(game_events: list[GameEvent]):
             raise Exception(last_event, following_event)
 
     elif (last_event.event_type is EventType.LiveFreeThrow):
-        if last_event.ft_result in same_team_ft_results:
+        if result.ft_result in same_team_ft_results:
             if (following_event.event_type is EventType.PossessionTry):
                 return last_event.lineup.offense_team == following_event.lineup.offense_team
             return False
-        elif last_event.ft_result in other_team_ft_results:
+        elif result.ft_result in other_team_ft_results:
             if (following_event.event_type is EventType.PossessionTry):
                 return last_event.lineup.offense_team != following_event.lineup.offense_team
             return False
-        elif last_event.ft_result in rebound_ft_results:
+        elif result.ft_result in rebound_ft_results:
             if (following_event.event_type is EventType.Rebound):
                 return True
                 # return game_events[-2].lineup.offense_team == following_event.lineup.offense_team
             return False
-        elif last_event.ft_result in live_ft_ft_results:
+        elif result.ft_result in live_ft_ft_results:
             if (following_event.event_type is EventType.LiveFreeThrow):
                 return True
                 # return game_events[-2].lineup.offense_team == following_event.lineup.offense_team
             return False
-        elif last_event.ft_result in jumpball_ft_results:
+        elif result.ft_result in jumpball_ft_results:
             if (following_event.event_type is EventType.JumpBall):
                 return True
                 # return game_events[-2].lineup.offense_team == following_event.lineup.offense_team
