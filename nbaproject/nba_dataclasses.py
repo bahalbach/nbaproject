@@ -201,7 +201,7 @@ class TryResultType(Enum):
     EXCESS_TIMEOUT_TURNOVER = 60  # none, also too many plays turnover
 
     FLAGRANT_AND_FOUL = 61  # fouler, is fouled, flagrant fouler, flagrant is fouled
-    FLAGRANT_AND_FOUL_1FT = 65
+    FLAGRANT_AND_FOUL_1FT = 69
 
     # fouler, is fouled, flagrant fouler, flagrant is fouled
     FOUL_AND_OFFENSE_FLAGRANT = 62
@@ -209,6 +209,16 @@ class TryResultType(Enum):
 # TryResultType.JUMP_BALL,
 # TryResultType.HELD_BALL,
 #    TryResultType.MISTAKE_CALL,
+
+
+has_flagrant_1ft = {
+    TryResultType.FLAGRANT_AND_FOUL_1FT
+}
+
+has_flagrant_2ft = {
+    TryResultType.FLAGRANT_AND_FOUL,
+    TryResultType.FOUL_AND_OFFENSE_FLAGRANT,
+}
 
 
 reboundable_results = {
@@ -531,6 +541,7 @@ class PossessionTry:
 class JumpBall:
     winning_team: int
     jumpball_result: JumpballResultType = JumpballResultType.NORMAL
+    num_fts: int = 0
 
 
 @dataclass
@@ -540,6 +551,7 @@ class FreeThrow:
     remaining_shots: int
     possession_after: bool
     score_margin: int
+    is_tech: bool = False
 
     # should have time left?
 
@@ -551,6 +563,7 @@ class LiveFreeThrow:
     goaltender: int = None
     fouler: int = None
     fouled: int = None
+    num_fts: int = 0
 
 
 @dataclass
@@ -564,6 +577,15 @@ class GameEvent:
     period_time_left: int
     event_type: EventType
     result: Union[PossessionTry, Rebound, LiveFreeThrow, JumpBall] = None
+
+    @property
+    def num_simultanious_flagrant_fts(self):
+        if hasattr(self.result, "result_type"):
+            if self.result.result_type in has_flagrant_1ft:
+                return 1
+            elif self.result.result_type in has_flagrant_2ft:
+                return 2
+        return 0
 
 
 def is_reboundable(game_event: GameEvent):
@@ -595,7 +617,7 @@ def get_ft_team(game_event: GameEvent):
         if result.rebound_result in has_offensive_fts_rb_results:
             return game_event.lineup.offense_team
         elif result.rebound_result in has_defensive_fts_rb_results:
-            return game_event.lineup.offense_team
+            return game_event.lineup.defense_team
         else:
             print("no fts")
     if game_event.event_type == EventType.JumpBall:
@@ -635,10 +657,6 @@ def expected_offense_team(game_events: list[GameEvent]):
         return last_event.lineup.offense_team
     else:
         return last_event.lineup.defense_team
-
-
-# def check_players_in_correct_lineup(game_event: GameEvent):
-#     return True
 
 
 def is_last_event_correct(game_events: list[GameEvent]):
