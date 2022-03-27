@@ -278,7 +278,7 @@ missing_possessions = {
 }
 
 
-def process_season(season, first_game=0):
+def process_season(season, first_game=0, check_fts=False):
     for team_season in season.team_seasons.values():
         team_season.reset_season()
 
@@ -294,40 +294,44 @@ def process_season(season, first_game=0):
         game_possession_info = process_game(game)
 
         game_events = game_possession_info.game_events
-        num_fts = 0
-        expected_fts = 0
-        ft_violations = 0
-        tech_num = 0
-        for i in range(len(game_events)):
-            e = game_events[i]
-            if hasattr(e.result, "num_fts"):
-                expected_fts += e.result.num_fts
-                if e.num_simultanious_flagrant_fts:
-                    print("has sffts", e.num_simultanious_flagrant_fts)
-                    print(e)
-                    expected_fts += e.num_simultanious_flagrant_fts
-                    # should_break = True
+        if check_fts:
+            num_fts = 0
+            expected_fts = 0
+            ft_violations = 0
+            tech_num = 0
+            for i in range(len(game_events)):
+                e = game_events[i]
+                if hasattr(e.result, "num_fts") and e.result.num_fts:
+                    expected_fts += e.result.num_fts
+                    if e.num_simultanious_flagrant_fts:
+                        # print("has sffts", e.num_simultanious_flagrant_fts)
+                        # print(e)
+                        expected_fts += e.num_simultanious_flagrant_fts
+                        # should_break = True
 
-            if e.event_type == EventType.LiveFreeThrow:
-                if e.result.ft_result in {LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY, }:
-                    ft_violations += 1
-                else:
-                    num_fts += 1
-        num_fts += len(game_possession_info.free_throws)
-        # for n in (game_possession_info.technicals[0] | game_possession_info.technicals[1]).values():
-        #     tech_num += n
-        # tech_num += game_possession_info.technicals[2]
-        tech_num = game_possession_info.team_techs[0] + \
-            game_possession_info.team_techs[1]
-        if game_possession_info.team_techs[2] != 0:
-            print("other techs?", game_possession_info.team_techs[2], game_id)
+                if e.event_type == EventType.LiveFreeThrow:
+                    if e.result.result_type in {LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY, }:
+                        ft_violations += 1
+                    else:
+                        num_fts += 1
+            num_fts += len(game_possession_info.free_throws)
+            # for n in (game_possession_info.technicals[0] | game_possession_info.technicals[1]).values():
+            #     tech_num += n
+            # tech_num += game_possession_info.technicals[2]
+            tech_num = game_possession_info.team_techs[0] + \
+                game_possession_info.team_techs[1]
+            if game_possession_info.team_techs[2] != 0:
+                print("other techs?",
+                      game_possession_info.team_techs[2], game_id)
+
+            if num_fts != expected_fts+tech_num:
+                print("for game", game_id)
+                print("not equal", num_fts, ft_violations,
+                      expected_fts, tech_num)
+                should_break = True
 
         games.append(game_possession_info)
         if should_break:
-            break
-        if num_fts != expected_fts+tech_num:
-            print("for game", game_id)
-            print("not equal", num_fts, ft_violations, expected_fts, tech_num)
             break
 
         count += 1
@@ -614,6 +618,8 @@ def process_game(game):
                         try_result.result_player1_id = event.player1_id
 
                 try_result.shot_type = shot_type_value[event.shot_type]
+                try_result.is_made = event.is_made
+
                 # TODO get shot description info
                 try_result.shot_X = event.locX if hasattr(
                     event, "locX") else None
@@ -643,9 +649,10 @@ def process_game(game):
                             lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.Rebound)
                         shooter = last_shot_or_ft.player1_id
                         shot_type = shot_type
+                        is_blocked = hasattr(last_shot_or_ft, "is_blocked") and last_shot_or_ft.is_blocked
                         rebound_result = ReboundResult.OFF_REBOUND
                         rebounder = next_event.player1_id
-                        rebound = Rebound(shooter, shot_type,
+                        rebound = Rebound(shooter, shot_type, is_blocked,
                                           rebound_result, rebounder)
                         out_of_order_rebound_game_event.result = rebound
                         game_events.append(out_of_order_rebound_game_event)
@@ -758,11 +765,11 @@ def process_game(game):
 
                         if event.is_made:
                             if goaltended:
-                                ft_result.ft_result = LiveFreeThrowResult.DEF_GOALTEND_MAKE
+                                ft_result.result_type = LiveFreeThrowResult.DEF_GOALTEND_MAKE
                             else:
-                                ft_result.ft_result = LiveFreeThrowResult.MADE
+                                ft_result.result_type = LiveFreeThrowResult.MADE
                         else:
-                            ft_result.ft_result = LiveFreeThrowResult.MISS
+                            ft_result.result_type = LiveFreeThrowResult.MISS
 
                         if foul_after_fts:
                             out_of_order_live_free_throw = live_free_throw
@@ -873,7 +880,7 @@ def process_game(game):
                     jumpball = JumpBall(winning_team)
 
                     if number_of_fta_for_foul != 0:
-                        jumpball.jumpball_result = JumpballResultType.LOOSE_BALL_FOUL
+                        jumpball.result_type = JumpballResultType.LOOSE_BALL_FOUL
                         jumpball.num_fts = number_of_fta_for_foul
 
                     if not is_last_event_correct(game_events):
@@ -904,11 +911,11 @@ def process_game(game):
                         raise Exception(possession, game_events)
 
                     if number_of_fta_for_foul != 0:
-                        game_events[-1].result.jumpball_result = JumpballResultType.LOOSE_BALL_FOUL
+                        game_events[-1].result.result_type = JumpballResultType.LOOSE_BALL_FOUL
                         game_events[-1].result.num_fts = number_of_fta_for_foul
 
                     if event.is_clear_path_foul:
-                        game_events[-1].result.jumpball_result = JumpballResultType.CLEAR_PATH_FOUL
+                        game_events[-1].result.result_type = JumpballResultType.CLEAR_PATH_FOUL
                         possession_after = True
                         if number_of_fta_for_foul == 0:
                             print("clear path after jumpball w/ 0 fts", event)
@@ -987,7 +994,7 @@ def process_game(game):
                 made_shot_with_foul = ((game_events[-1].event_type == EventType.PossessionTry)
                                        and game_events[-1].result.result_type == TryResultType.MADE_SHOT)
                 made_ft_with_foul = ((game_events[-1].event_type == EventType.LiveFreeThrow)
-                                     and game_events[-1].result.ft_result == LiveFreeThrowResult.MADE)
+                                     and game_events[-1].result.result_type == LiveFreeThrowResult.MADE)
                 wrong_foul_type = event.is_offensive_foul or event.is_charge or event.is_inbound_foul or event.is_double_foul or event.is_personal_take_foul or event.is_clear_path_foul
                 has_turnover_at_same_time = False
                 next_event = event.next_event
@@ -1036,17 +1043,17 @@ def process_game(game):
                             if event.is_flagrant:
                                 possession_after = True
                                 if event.is_flagrant1:
-                                    game_events[-1].result.ft_result = LiveFreeThrowResult.MADE_AND_FLAGRANT1
+                                    game_events[-1].result.result_type = LiveFreeThrowResult.MADE_AND_FLAGRANT1
                                 else:
-                                    game_events[-1].result.ft_result = LiveFreeThrowResult.MADE_AND_FLAGRANT2
+                                    game_events[-1].result.result_type = LiveFreeThrowResult.MADE_AND_FLAGRANT2
                             else:
-                                game_events[-1].result.ft_result = LiveFreeThrowResult.MADE_AND_FOUL
+                                game_events[-1].result.result_type = LiveFreeThrowResult.MADE_AND_FOUL
                             game_events[-1].result.fouler = fouler
                             game_events[-1].result.fouled = fouled
                             game_events[-1].result.num_fts = number_of_fta_for_foul
                             if game_events[-1].lineup.offense_team == event.team_id:
                                 print("made ft w offensive foul",
-                                      game_events[-1].result.ft_result)
+                                      game_events[-1].result.result_type)
 
                         logging.debug(
                             f"process foul {event.event_num} as made w foul ft")
@@ -1546,7 +1553,7 @@ def process_game(game):
                     if expected_fts == 0:
                         if game_events[-1].event_type == EventType.LiveFreeThrow:
                             print("dbl lane vio after",
-                                  game_events[-1].result.ft_result)
+                                  game_events[-1].result.result_type)
                             double_lane_violation = True
                             continue
                         else:
@@ -1591,9 +1598,9 @@ def process_game(game):
                     if next_event.clock == event.clock and (isinstance(next_event, enhanced_pbp.FreeThrow)):
                         # repeat freethrow attempt
                         if event.team_id == ft_team:
-                            ft_result.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
+                            ft_result.result_type = LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
                         else:
-                            ft_result.ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY
+                            ft_result.result_type = LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY
                         ft_result.fouler = event.player1_id
                         ft_result.fouled = None
                     else:
@@ -1621,7 +1628,7 @@ def process_game(game):
                         # if violater2 is None:
                         #     print(
                         #         "no second violator for double lane violation", event)
-                        ft_result.ft_result = LiveFreeThrowResult.DOUBLE_LANE_VIOLATION
+                        ft_result.result_type = LiveFreeThrowResult.DOUBLE_LANE_VIOLATION
                         ft_result.fouler = violater1
                         ft_result.fouled = violater2
                         expected_fts -= 1
@@ -1675,14 +1682,14 @@ def process_game(game):
                         next_event = event.next_event
                         if event.team_id != ft_team or next_event.clock == event.clock and (isinstance(next_event, enhanced_pbp.FreeThrow) or (isinstance(next_event, enhanced_pbp.Violation) and (next_event.is_lane_violation or next_event.is_double_lane_violation)) or (event.team_id != ft_team and isinstance(next_event, enhanced_pbp.Turnover) and next_event.is_lane_violation)):
                             if event.team_id == ft_team:
-                                ft_result.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
+                                ft_result.result_type = LiveFreeThrowResult.OFF_LANE_VIOLATION_RETRY
                             else:
-                                ft_result.ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY
+                                ft_result.result_type = LiveFreeThrowResult.DEF_LANE_VIOLATION_RETRY
                         else:
                             # if event.team_id == offense_team_id:
-                            ft_result.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
+                            ft_result.result_type = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
                             # else:
-                            #     live_free_throw.ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_MAKE
+                            #     live_free_throw.result_type = LiveFreeThrowResult.DEF_LANE_VIOLATION_MAKE
                             #     print("def lane violation make?", event)
                             #     print(possession.events)
                             try_start = TryStart(
@@ -1711,14 +1718,14 @@ def process_game(game):
                                 print("just ignoring...")
                             else:
                                 # TODO this is kinda more like a rebound result?
-                                game_events[-2].result.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
+                                game_events[-2].result.result_type = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
                                 game_events.pop()
                         elif isinstance(rebound, enhanced_pbp.FreeThrow) and time_within(rebound, event, 1) and game_events[-1].event_type == EventType.LiveFreeThrow:
                             if event.team_id == rebound.team_id:
                                 print("wrong team lftv2", event)
                                 print("just ignoring...")
                             else:
-                                game_events[-1].result.ft_result = LiveFreeThrowResult.DEF_LANE_VIOLATION_MAKE
+                                game_events[-1].result.result_type = LiveFreeThrowResult.DEF_LANE_VIOLATION_MAKE
                         else:
                             print("unhandled non ft lane violation", event)
                             print(possession.events)
@@ -1981,7 +1988,7 @@ def process_game(game):
                 elif event.is_travel:
                     last_event = game_events[-1]
                     if last_event.event_type == EventType.Rebound and last_event.period_time_left == period_time_left and game_events[-2].lineup.offense_team == event.team_id:
-                        game_events[-1].result.rebound_result = ReboundResult.KICKED_BALL_TURNOVER
+                        game_events[-1].result.result_type = ReboundResult.KICKED_BALL_TURNOVER
                         try_start = TryStart(
                             TryStartType.DEAD_BALL_TURNOVER, period_time_left)
                     elif is_reboundable(last_event):
@@ -2001,7 +2008,7 @@ def process_game(game):
                     last_event = game_events[-1]
                     if last_event.event_type == EventType.Rebound and last_event.period_time_left == period_time_left:
                         if game_events[-2].lineup.offense_team == event.team_id:
-                            game_events[-1].result.rebound_result = ReboundResult.SHOTCLOCK_TURNOVER
+                            game_events[-1].result.result_type = ReboundResult.SHOTCLOCK_TURNOVER
                             try_start = TryStart(
                                 TryStartType.DEAD_BALL_TURNOVER, period_time_left)
                         else:
@@ -2061,7 +2068,7 @@ def process_game(game):
                             if game_events[-1].event_type != EventType.Rebound:
                                 print("should be a rebound")
                                 raise Exception(possession, game_events)
-                            game_events[-1].result.rebound_result = ReboundResult.OFF_REBOUND
+                            game_events[-1].result.result_type = ReboundResult.OFF_REBOUND
                             game_events[-1].result.rebounder = event.player1_id
                         try_result.result_type = TryResultType.OFFENSIVE_GOALTENDING_TURNOVER
                         try_result.result_player1_id = event.player1_id
@@ -2082,7 +2089,7 @@ def process_game(game):
                             rebound_result = ReboundResult.KICKED_BALL_TURNOVER_OREB
 
                         if game_events[-1].event_type == EventType.Rebound:
-                            game_events[-1].result.rebound_result = rebound_result
+                            game_events[-1].result.result_type = rebound_result
                             game_events[-1].result.fouler = fouler
                         else:
                             rebound_result_type = rebound_result
@@ -2140,10 +2147,10 @@ def process_game(game):
                     else:
                         if event.previous_event.clock == event.clock:
                             last_event_missed_live_ft = game_events[-2].event_type == EventType.LiveFreeThrow and game_events[
-                                -2].result.ft_result == LiveFreeThrowResult.MISS and game_events[-2].period_time_left == period_time_left
+                                -2].result.result_type == LiveFreeThrowResult.MISS and game_events[-2].period_time_left == period_time_left
                             if last_event_missed_live_ft:
                                 game_events.pop()
-                                game_events[-1].result.ft_result = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
+                                game_events[-1].result.result_type = LiveFreeThrowResult.OFF_LANE_VIOLATION_MISS
                                 game_events[-1].result.fouler = event.player1_id
                                 continue
                             else:
@@ -2599,6 +2606,7 @@ def process_game(game):
                 last_reboundable_shot.has_been_rebounded = True
                 shooter = last_reboundable_shot.player1_id
                 shot_type = shot_type_value[last_reboundable_shot.shot_type]
+                is_blocked = hasattr(last_shot_or_ft, "is_blocked") and last_shot_or_ft.is_blocked
 
                 last_game_event = game_events[-1]
                 lineup = last_game_event.lineup
@@ -2609,7 +2617,7 @@ def process_game(game):
                     lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.Rebound)
 
                 rebound = Rebound(
-                    shooter, shot_type, rebound_result_type, rebounder, fouler, num_fts)
+                    shooter, shot_type, is_blocked, rebound_result_type, rebounder, fouler, num_fts)
                 rebound_game_event.result = rebound
 
                 if has_out_of_order_foul_rebound:
