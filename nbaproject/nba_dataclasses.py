@@ -726,6 +726,12 @@ class GameEvent:
                 return 2
         return 0
 
+    @property
+    def is_putback(self):
+        if self.event_type != EventType.PossessionTry:
+            return False
+        return self.result.shot_type is not None and self.result.try_start.start_type == TryStartType.OFF_REBOUND and self.result.try_start.start_player1_id == self.result.result_player1_id and abs(self.result.try_start.period_time_left - self.period_time_left) <= 2
+
 
 def is_reboundable(game_event: GameEvent):
     result = game_event.result
