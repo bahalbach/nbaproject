@@ -6,7 +6,7 @@ from nba_utils import seconds_from_time
 from nba_dataclasses import GamePossessionInfo, PossessionTry, FoulLineup, Rebound, ReboundResult, FreeThrow, TryStart, TryResultType, TryStartType, LaneViolation, ShotType, FreeThrowGoaltending, DoubleLaneViolation, MadeFtFoul, shot_type_value, foullineup_from_off_event, foullineup_from_def_event, other_team_results, same_team_results, reboundable_results
 from nba_api.stats.static.teams import find_team_name_by_id
 from nba_api.stats.static.players import find_player_by_id
-from nba import NbaTracker
+
 from pbpstats.client import Client
 from pbpstats.resources import enhanced_pbp
 
@@ -282,7 +282,7 @@ def process_season(season, first_game=0, check_fts=False):
     for team_season in season.team_seasons.values():
         team_season.reset_season()
 
-    games: list[GamePossessionInfo] = []
+    games: dict[str, GamePossessionInfo] = {}
     count = 0
     should_break = False
     for game_dict in season.schedule.games.final_games[first_game:]:
@@ -330,7 +330,7 @@ def process_season(season, first_game=0, check_fts=False):
                       expected_fts, tech_num)
                 should_break = True
 
-        games.append(game_possession_info)
+        games[game_id] = game_possession_info
         if should_break:
             break
 
@@ -649,7 +649,8 @@ def process_game(game):
                             lineup, offense_is_home, fouls_to_give, in_penalty, score_margin, possession.period, period_time_left, EventType.Rebound)
                         shooter = last_shot_or_ft.player1_id
                         shot_type = shot_type
-                        is_blocked = hasattr(last_shot_or_ft, "is_blocked") and last_shot_or_ft.is_blocked
+                        is_blocked = hasattr(
+                            last_shot_or_ft, "is_blocked") and last_shot_or_ft.is_blocked
                         rebound_result = ReboundResult.OFF_REBOUND
                         rebounder = next_event.player1_id
                         rebound = Rebound(shooter, shot_type, is_blocked,
@@ -2606,7 +2607,8 @@ def process_game(game):
                 last_reboundable_shot.has_been_rebounded = True
                 shooter = last_reboundable_shot.player1_id
                 shot_type = shot_type_value[last_reboundable_shot.shot_type]
-                is_blocked = hasattr(last_shot_or_ft, "is_blocked") and last_shot_or_ft.is_blocked
+                is_blocked = hasattr(
+                    last_shot_or_ft, "is_blocked") and last_shot_or_ft.is_blocked
 
                 last_game_event = game_events[-1]
                 lineup = last_game_event.lineup
@@ -2660,8 +2662,8 @@ def process_game(game):
                   technicals[road_team], technicals[0])
     double_techs = double_techs
 
-    game_possession_info = GamePossessionInfo(
-        game_events, free_throws, delay_of_games, team_techs, technicals, double_techs)
+    game_possession_info = GamePossessionInfo(game.game_id,
+                                              game_events, free_throws, delay_of_games, team_techs, technicals, double_techs)
 
     if expected_fts != 0:
         print("fts left to shoot")
@@ -2669,8 +2671,8 @@ def process_game(game):
     return game_possession_info
 
 
-if __name__ == "__main__":
-    nbaTracker = NbaTracker()
-    nbaTracker.add_season("2019-20")
-    season = nbaTracker.current_season
-    games = process_season(season)
+# if __name__ == "__main__":
+#     nbaTracker = NbaTracker()
+#     nbaTracker.add_season("2019-20")
+#     season = nbaTracker.current_season
+#     games = process_season(season)

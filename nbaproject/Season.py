@@ -17,8 +17,9 @@ from nba_api.stats.endpoints import CommonTeamRoster
 from nba_utils import get_team_abr, seasons, seconds_from_time, get_ln, abr_id_map
 from nba_dataclasses import ShotStats, LineupPlayers, Official, TeamGameData, GameInfo
 from load_roster_br import load_roster_br
-from nba_dataclasses import GameStatus
+from nba_dataclasses import GameStatus, GamePossessionInfo
 from nba_utils import map_id
+from build_shot_chance_data import process_season
 
 season_settings = {
     "dir": "C:/Users/bhalb/nbaproject/response_data",
@@ -307,6 +308,8 @@ class Season:
         self.player_seasons: dict[int, PlayerSeason] = None
 
         self.game_infos: dict[int, GameInfo] = None
+        self.games: dict[str,
+                         GamePossessionInfo] = None
 
         # self.lineups: defaultdict[Lineup,
         #                           LineupStats] = defaultdict(LineupStats)
@@ -372,11 +375,32 @@ class Season:
         if count > 0:
             self.saveGameInfos()
 
-    def save(self):
-        path = f"C:/Users/bhalb/nbaproject/data/season{self.name}.pickle"
+    def save_possession_data(self):
+        path = f"C:/Users/bhalb/nbaproject/data/season{self.name}PossessionData.pickle"
         with open(path, 'wb') as handle:
-            pickle.dump(self, handle,
+            pickle.dump(self.games, handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
+
+    def load_possession_data(self):
+        path = f"C:/Users/bhalb/nbaproject/data/season{self.name}PossessionData.pickle"
+        if isfile(path):
+            with open(path, 'rb') as handle:
+                self.games: dict[str, GamePossessionInfo] = pickle.load(handle)
+        else:
+            if self.games is None:
+                try:
+                    self.games: dict[str,
+                                     GamePossessionInfo] = process_season(self)
+                    self.save_possession_data()
+                except Exception as e:
+                    print("failed to load and save possession data")
+                    raise e
+
+    # def save(self):
+    #     path = f"C:/Users/bhalb/nbaproject/data/season{self.name}.pickle"
+    #     with open(path, 'wb') as handle:
+    #         pickle.dump(self, handle,
+    #                     protocol=pickle.HIGHEST_PROTOCOL)
 
     def update(self):
         """To use when Season saved with old code"""

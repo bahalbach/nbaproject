@@ -78,6 +78,10 @@ class FoulLineup:
     defense_players: tuple[int, int, int, int, int]
     defense_fouls: tuple[int, int, int, int, int]
 
+    @property
+    def lineup(self):
+        return self.offense_players, self.defense_players
+
 
 def get_foul_lineup(event, offense_team_id):
     fouls = event.player_game_fouls
@@ -945,6 +949,8 @@ class DoubleLaneViolation:
 
 @ dataclass
 class GamePossessionInfo:
+    game_id: str
+
     game_events: list[GameEvent]
 
     free_throws: list[FreeThrow]
@@ -1066,6 +1072,8 @@ class PlayerInfo:
     dpm = 0
     e_opm = 0
     e_dpm = 0
+    oreb_pm = 0
+    dreb_pm = 0
 
     @property
     def pm(self):
@@ -1074,6 +1082,10 @@ class PlayerInfo:
     @property
     def epm(self):
         return self.e_opm - self.e_dpm
+
+    @property
+    def reb_pm(self):
+        return self.oreb_pm - self.dreb_pm
 
 
 @dataclass

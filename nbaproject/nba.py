@@ -123,6 +123,12 @@ class NbaTracker:
 
             print('saved season', season_name)
 
+    def load_possession_data(self, season_name):
+        if season_name not in self.seasons:
+            print("add/load season first")
+        else:
+            self.seasons[season_name].load_possession_data()
+
     def build_points_data(self):
         # ave points this season
         # games played this season
