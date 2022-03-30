@@ -1,6 +1,6 @@
 from abc import ABC
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Union
 from collections import defaultdict, namedtuple
 import re
@@ -217,7 +217,7 @@ class TryResultType(Enum):
 #    TryResultType.MISTAKE_CALL,
 
 
-class ResultClass(Enum):
+class ResultClass(IntEnum):
     MADE_SHOT = 1
     REBOUND = 2
     FT = 3
