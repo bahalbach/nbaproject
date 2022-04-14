@@ -20,8 +20,11 @@ html5lib = "^1.1"
 lxml = "^4.7.1"
 keras-tuner = "^1.1.0"
 tensorboard-plugin-profile = "^2.5.0"
+ipykernel = "^6.13.0"
+jupyter = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
+ipykernel = "^6.13.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

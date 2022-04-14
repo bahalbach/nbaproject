@@ -15,6 +15,15 @@ def print_version():
 # %%
 
 
+class KeyDefaultDict(dict):
+    def __init__(self, factory):
+        self.factory = factory
+
+    def __missing__(self, key):
+        self[key] = self.factory(key)
+        return self[key]
+
+
 def seconds_from_time(time: str) -> int:
     """
     Return the amount of seconds represented by str time
