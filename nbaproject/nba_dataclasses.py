@@ -1,6 +1,7 @@
 from abc import ABC
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
+from gc import garbage
 from typing import Union
 from collections import defaultdict, namedtuple
 import re
@@ -716,6 +717,7 @@ class GameEvent:
     period_time_left: int
     event_type: EventType
     result: Result = None
+    is_garbage_time: bool = False
 
     @property
     def num_simultanious_flagrant_fts(self):
@@ -965,6 +967,41 @@ class GamePossessionInfo:
     team_techs: tuple[int, int, int]
     technicals: tuple[dict[int, int], dict[int, int], int]
     double_techs: tuple[list[int], list[int]]
+
+    def __post_init__(self):
+        self.add_garbage_time_to_game_events()
+
+    def add_garbage_time_to_game_events(self):
+        """Adds cleaning the glass garbage time to is_garbage_time for all game_events
+
+            https://cleaningtheglass.com/stats/guide/garbage_time
+        """
+        starting_lineups = self.game_events[0].lineup.lineup
+        start_garbage_event = None
+        for ge in self.game_events:
+            if ge.period < 4:
+                continue
+            if ge.period == 4:
+                num_starters = 0
+                for team in [0, 1]:
+                    for pid in ge.lineup.lineup[team]:
+                        if pid in starting_lineups[team]:
+                            num_starters += 1
+                if num_starters <= 2:
+                    if ((ge.period_time_left > 9*60 and abs(ge.score_margin) >= 25) or
+                        (ge.period_time_left > 9*60 and abs(ge.score_margin) >= 25) or
+                            (ge.period_time_left > 9*60 and abs(ge.score_margin) >= 25)):
+                        if start_garbage_event is None:
+                            start_garbage_event = ge
+                        continue
+            start_garbage_event = None
+        if start_garbage_event is not None:
+            garbage_time = False
+            for ge in self.game_events:
+                if ge is start_garbage_event:
+                    garbage_time = True
+                if garbage_time:
+                    ge.is_garbage_time = True
 
 
 @ dataclass(frozen=True)
