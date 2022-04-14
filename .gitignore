@@ -5,6 +5,7 @@ aclImdb
 tftutorials/sizes/
 tftutorials/my_dir/
 nbaproject/my_logs/
+nbaproject/saved_model/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
