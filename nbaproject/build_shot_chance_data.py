@@ -3,7 +3,7 @@ import logging
 import re
 from turtle import pos
 from nba_utils import seconds_from_time
-from nba_dataclasses import GamePossessionInfo, PossessionTry, FoulLineup, Rebound, ReboundResult, FreeThrow, TryStart, TryResultType, TryStartType, LaneViolation, ShotType, FreeThrowGoaltending, DoubleLaneViolation, MadeFtFoul, shot_type_value, foullineup_from_off_event, foullineup_from_def_event, other_team_results, same_team_results, reboundable_results
+from nba_dataclasses import GamePossessionInfo, PossessionTry, FoulLineup, Rebound, ReboundResult, FreeThrow, TryStart, TryResultType, TryStartType, ShotType, shot_type_value, foullineup_from_off_event, foullineup_from_def_event, other_team_results, same_team_results, reboundable_results
 from nba_api.stats.static.teams import find_team_name_by_id
 from nba_api.stats.static.players import find_player_by_id
 
@@ -368,10 +368,7 @@ def process_game(game):
     # tries: list[PossessionTry] = []
     # rebounds: list[Rebound] = []
     free_throws: list[FreeThrow] = []
-    # free_throw_goaltends: list[FreeThrowGoaltending] = []
-    # made_ft_fouls: list[MadeFtFoul] = []
-    # defensive goaltending, free throw also in free_throws
-    # lane_violations: list[LaneViolation] = []
+    
     delay_of_games = {home_team: 0, road_team: 0, 0: 0}
     team_techs = {home_team: 0, road_team: 0, 0: 0}
     technicals = {home_team: {}, road_team: {}, 0: 0}

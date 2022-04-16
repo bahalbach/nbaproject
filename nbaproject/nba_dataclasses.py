@@ -924,38 +924,6 @@ def is_last_event_correct(game_events: list[GameEvent]):
 
 
 @ dataclass
-class MadeFtFoul:
-    shooter: int
-    lineup: FoulLineup
-    fouler: int
-    is_fouled: int
-    game_time_left: int
-    score_margin: int
-
-
-@ dataclass
-class LaneViolation:
-    shooter: int
-    violater: int
-    lineup: FoulLineup
-    offensive: bool = False
-
-
-@ dataclass
-class FreeThrowGoaltending:  # defensive goaltending, free throw also in free_throws
-    shooter: int
-    violater: int
-
-
-@ dataclass
-class DoubleLaneViolation:
-    shooter: int
-    violater1: int
-    violater2: int
-    lineup: FoulLineup
-
-
-@ dataclass
 class GamePossessionInfo:
     game_id: str
 
