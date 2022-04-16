@@ -49,12 +49,12 @@ class TryStartType(Enum):
     DEF_REBOUND = 3  # rebounder, shooter
     OFF_REBOUND = 4  # rebounder, shooter
     OUT_OF_BOUNDS = 5  # none, rebound w/ id = 0
-    DEAD_BALL_TURNOVER = 6  # none, same as out_of_bounds probably
-    AFTER_FOUL = 7  # none
-    TIMEOUT = 8
-    JUMP_BALL = 9  # tip winner, reciever, loser
-    STEAL = 10  # stealer, was stolen from # bad pass or lost ball???
-    START_OF_PERIOD = 11  # none
+    DEAD_BALL_TURNOVER = 5  # none, same as out_of_bounds probably
+    AFTER_FOUL = 6  # none
+    TIMEOUT = 7
+    JUMP_BALL = 8  # tip winner, reciever, loser
+    STEAL = 9  # stealer, was stolen from # bad pass or lost ball???
+    START_OF_PERIOD = 2  # none
 
 
 @dataclass
