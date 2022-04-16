@@ -315,7 +315,7 @@ class PlayerSeasonData:
         if result.result_class == ResultClass.OTHER_TEAM_FT and result.rebounder == self.player_id:
             self.dreb_player_fdraw += 1
         if result.result_class == ResultClass.DEF_REBOUND and result.rebounder == self.player_id:
-            self.oreb_player_live_oreb += 1
+            self.dreb_player_live_dreb += 1
 
         if result.result_class == ResultClass.FT:
             self.dreb_team_foul += 1
@@ -389,7 +389,7 @@ class PlayerSeasonData:
         if result.result_class == ResultClass.OTHER_TEAM_FT and result.rebounder == self.player_id:
             self.dreb_player_fdraw -= 1
         if result.result_class == ResultClass.DEF_REBOUND and result.rebounder == self.player_id:
-            self.oreb_player_live_oreb -= 1
+            self.dreb_player_live_dreb -= 1
 
         if result.result_class == ResultClass.FT:
             self.dreb_team_foul -= 1
