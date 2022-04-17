@@ -1,3 +1,4 @@
+from numpy import append
 from PlayerSeasonData import PlayerSeasonData
 from nba_utils import KeyDefaultDict
 from collections import defaultdict
@@ -19,11 +20,14 @@ class PlayerTracker:
             team.roster_df.apply(
                 lambda row: self.players[row.PLAYER_ID].add_roster_info(row), axis=1
             )
+            team.roster.apply(
+                lambda row: self.players[row.id].add_br_roster_info(row), axis=1
+            )
         self.game_client = Client(game_settings)
         path = f"C:/Users/bhalb/nbaproject/data/season{self.season.name}player_tracking_df.csv"
         self.df = pd.read_csv(path)
 
-        players = list(self.players.keys())
+        # players = list(self.players.keys())
 
         # self.rebound_teammates = defaultdict(
         #     lambda: defaultdict(lambda: [0, 0]))
@@ -57,14 +61,25 @@ class PlayerTracker:
         self.df[self.df.GAME_ID.isin(map(int, [game_id]))].apply(
             lambda row: self.players[row.PLAYER_ID].undo_add_playertracking(row), axis=1)
 
-    def redo_add_game(self, game_id):
+    def add_game(self, game_id):
         game = self.game_client.Game(game_id)
+        playing_players = []
+        all_players = []
+
         for player in game.boxscore.player_items:
             player_id = player['player_id']
             self.players[player_id].add_boxscore(player)
+            player = (player_id, (player['pts'], player['reb'], player['ast']))
+            playing_players.append(player)
+
+        def add_playertracking(row):
+            self.players[row.PLAYER_ID].add_playertracking(row)
+            all_players.append(row.PLAYER_ID)
 
         self.df[self.df.GAME_ID.isin(map(int, [game_id]))].apply(
-            lambda row: self.players[row.PLAYER_ID].add_playertracking(row), axis=1)
+            add_playertracking, axis=1)
+
+        return playing_players, all_players
 
     def add_try_event(self, ge, rc_chances, shot_chances, epts, eofts, edfts):
         lineup = ge.lineup.lineup
