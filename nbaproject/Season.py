@@ -348,13 +348,13 @@ class Season:
             self.load_rosters_br()
             # self.build_player_seasons()
 
-    def saveGameInfos(self):
+    def save_game_infos(self):
         path = f"C:/Users/bhalb/nbaproject/data/season{self.name}GameInfos.pickle"
         with open(path, 'wb') as handle:
             pickle.dump(self.game_infos, handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
 
-    def loadGameInfos(self):
+    def load_game_infos(self):
         path = f"C:/Users/bhalb/nbaproject/data/season{self.name}GameInfos.pickle"
         if isfile(path):
             with open(path, 'rb') as handle:
@@ -373,10 +373,10 @@ class Season:
                 print("loaded", count, game_id)
                 time.sleep(5)
                 if count % 100 == 0:
-                    self.saveGameInfos()
+                    self.save_game_infos()
 
         if count > 0:
-            self.saveGameInfos()
+            self.save_game_infos()
 
     def save_possession_data(self):
         path = f"C:/Users/bhalb/nbaproject/data/season{self.name}PossessionData.pickle"
