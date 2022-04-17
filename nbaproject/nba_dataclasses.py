@@ -1,12 +1,8 @@
 from abc import ABC
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from gc import garbage
-from typing import Union
+
 from collections import defaultdict, namedtuple
-import re
-from tkinter.font import NORMAL
-from unittest import result
 
 
 class GameStatus(Enum):
@@ -40,6 +36,13 @@ class GameInfo:
     away_id: int
     away_players: TeamGameData
     officials: list[Official]
+
+    def get_available_players(self):
+        for pid in self.home_players.starters + self.away_players.starters:
+            yield pid
+        for pid, status in self.home_players.bench + self.away_players.bench:
+            if status == GameStatus.DNP or status == GameStatus.PLAYED:
+                yield pid
 
 
 class TryStartType(Enum):
@@ -213,6 +216,32 @@ class TryResultType(Enum):
     # fouler, is fouled, flagrant fouler, flagrant is fouled
     FOUL_AND_OFFENSE_FLAGRANT = 62
 
+    @property
+    def is_turnover(self):
+        turnovers = {
+            TryResultType.OFFENSIVE_FOUL_TURNOVER,
+            TryResultType.PENALTY_OFF_FOUL_TURNOVER,
+            TryResultType.CHARGE,
+            TryResultType.BAD_PASS_OUT,
+            TryResultType.OFFENSIVE_GOALTENDING_TURNOVER,
+            TryResultType.LOST_BALL_STEAL,
+            TryResultType.BAD_PASS_STEAL,
+            TryResultType.LOST_BALL_OUT_TURNOVER,
+            TryResultType.STEP_OUT_TURNOVER,
+            TryResultType.TRAVEL,
+            TryResultType.DISCONTINUE_DRIBBLE,
+            TryResultType.PALMIMG_TURNOVER,
+            TryResultType.DOUBLE_DRIBBLE_TURNOVER,
+            TryResultType.KICKED_BALL_TURNOVER,
+            TryResultType.ILLEGAL_SCREEN_TURNOVER,
+            TryResultType.BACKCOURT_TURNOVER,
+            TryResultType.EIGHT_SECONDS_TURNOVER,
+            TryResultType.THROW_IN_5SECONDS_TURNOVER,
+            TryResultType.OFF_3SECONDS_TURNOVER,
+            TryResultType.INBOUND_TURNOVER,
+            TryResultType.ILLEGAL_ASSIST,
+        }
+        return self in turnovers
 # TryResultType.JUMP_BALL,
 # TryResultType.HELD_BALL,
 #    TryResultType.MISTAKE_CALL,
