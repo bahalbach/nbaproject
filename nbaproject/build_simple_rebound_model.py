@@ -6,7 +6,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, LabelBinarizer, OrdinalEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 import pandas as pd
-from nba_dataclasses import EventType, ResultClass
+from nba_dataclasses import EventType, ResultClass, GamePossessionInfo
 from sklearn.model_selection import train_test_split
 from nba import NbaTracker
 
@@ -21,7 +21,7 @@ binary_attributes = ['is_blocked', 'is_putback',
 numerical_attributes = ['score_margin']
 
 
-def get_rebound_df_from_games(games):
+def get_rebound_df_from_games(games: list[GamePossessionInfo]):
     rebounds = []
     for game in games:
         last_game_event = None
