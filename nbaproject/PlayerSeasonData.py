@@ -138,6 +138,35 @@ class PlayerSeasonData:
     dreb_team_live_oreb_dif: int = 0
     dreb_team_dead_oreb_dif: int = 0
 
+    @property
+    def mins(self):
+        return self.secs / 60
+
+    @property
+    def pts(self):
+        pts = self.fg2m*2 + self.fg3m*3 + self.ftm
+        return pts
+
+    @property
+    def reb(self):
+        reb = self.oreb + self.dreb
+        return reb
+
+    def get_basic_info(self):
+        height = self.height if self.height else self.br_height
+        weight = self.weight if self.weight else self.br_weight
+        pos = self.position if self.position else self.br_position
+        age = self.age if self.age else self.br_age
+        exp = self.exp if self.exp else self.br_exp
+
+        return [
+            height,
+            weight,
+            pos,
+            age,
+            exp,
+        ]
+
     def get_stats(self):
         mins = self.secs / 60 if self.secs else 1
         oreb_events = self.oreb_events if self.oreb_events else 1
@@ -270,6 +299,39 @@ class PlayerSeasonData:
             # self.dreb_team_dead_oreb_dif / dreb_events,
         ]
 
+    def get_rebound_stats(self):
+        mins = self.secs / 60 if self.secs else 1
+        oreb_events = self.oreb_events if self.oreb_events else 1
+        dreb_events = self.dreb_events if self.dreb_events else 1
+        games = self.games if self.games else 1
+
+        return [
+            self.games,
+            self.games_started,
+            mins,
+            self.oreb+self.dreb / games,
+            self.oreb / mins,
+            self.dreb / mins,
+            self.oreb / oreb_events,
+            self.dreb / dreb_events,
+            self.orbc,
+            self.orbc / mins,
+            self.oreb / self.orbc if self.orbc else 0,
+            self.drbc,
+            self.drbc / mins,
+            self.dreb / self.drbc if self.drbc else 0,
+            oreb_events,
+            self.orbc / oreb_events,
+            self.oreb_player_foul / oreb_events,
+            self.oreb_player_fdraw / oreb_events,
+            self.oreb_player_live_oreb / oreb_events,
+            dreb_events,
+            self.drbc / dreb_events,
+            self.dreb_player_foul / dreb_events,
+            self.dreb_player_fdraw / dreb_events,
+            self.dreb_player_live_dreb / dreb_events,
+        ]
+
     def get_simple_stats(self):
         mins = self.secs / 60 if self.secs else 1
         games = self.games if self.games else 1
@@ -356,6 +418,11 @@ class PlayerSeasonData:
         self.br_exp = int(roster.exp)
 
     def add_boxscore(self, boxscore: dict):
+        mins = seconds_from_time(boxscore['min']) / 60
+        pts = boxscore['pts']
+        reb = boxscore['reb']
+        ast = boxscore['ast']
+
         self.games += 1
         self.games_started += 1 if boxscore['start_position'] != '' else 0
         self.secs += seconds_from_time(boxscore['min'])
@@ -373,6 +440,8 @@ class PlayerSeasonData:
         self.to += boxscore['to']
         self.pf += boxscore['pf']
         self.plus_minus += boxscore['plus_minus']
+
+        return (mins, pts, reb, ast)
 
     def undo_add_boxscore(self, boxscore: dict):
         self.games -= 1
