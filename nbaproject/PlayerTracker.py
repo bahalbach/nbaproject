@@ -68,9 +68,12 @@ class PlayerTracker:
 
         for player in game.boxscore.player_items:
             player_id = player['player_id']
-            self.players[player_id].add_boxscore(player)
-            player = (player_id, (player['pts'], player['reb'], player['ast']))
+            stats = self.players[player_id].add_boxscore(player)
+            player = (player_id, stats)
             playing_players.append(player)
+
+        home_score = game.boxscore.team_items[0]['pts']
+        away_score = game.boxscore.team_items[1]['pts']
 
         def add_playertracking(row):
             self.players[row.PLAYER_ID].add_playertracking(row)
@@ -79,7 +82,7 @@ class PlayerTracker:
         self.df[self.df.GAME_ID.isin(map(int, [game_id]))].apply(
             add_playertracking, axis=1)
 
-        return playing_players, all_players
+        return playing_players, all_players, (home_score, away_score)
 
     def add_try_event(self, ge, rc_chances, shot_chances, epts, eofts, edfts):
         lineup = ge.lineup.lineup
