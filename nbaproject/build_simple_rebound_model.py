@@ -61,10 +61,23 @@ def get_rebound_df_from_games(games: list[GamePossessionInfo]):
 
 
 def build_simple_rebound_model(season, random_state=432536):
-    games = season.games
+    return build_rebound_model_from_games(list(season.games.values()), name=season.name, random_state=random_state)
 
+
+def build_multiseason_rebound_model(nbaTracker, random_state=432536):
+    seasons = list(sorted(list(nbaTracker.seasons.keys())))
+    name = seasons[0].split("-")[0] + seasons[-1].split("-")[1]
+    games = []
+    for season_name in seasons:
+        season = nbaTracker.seasons[season_name]
+        games += list(season.games.values())
+
+    return build_rebound_model_from_games(games, name=name, random_state=random_state)
+
+
+def build_rebound_model_from_games(games, name, random_state):
     train_games, test_games = train_test_split(
-        list(games.values()), test_size=0.1, random_state=432536)
+        games, test_size=0.1, random_state=random_state)
 
     train_rebounds = get_rebound_df_from_games(train_games)
     test_rebounds = get_rebound_df_from_games(test_games)
@@ -87,7 +100,7 @@ def build_simple_rebound_model(season, random_state=432536):
     processed_test_X = tf.cast(
         preprocess.transform(test_X), dtype=tf.float32)
 
-    path = f'saved_model/rebound_model{season.name}'
+    path = f'saved_model/rebound_model{name}'
     if isdir(path):
         rebound_model = tf.keras.models.load_model(path)
     else:
@@ -100,8 +113,10 @@ def build_simple_rebound_model(season, random_state=432536):
             (processed_test_X, (processed_test_y, test_is_oreb.to_numpy().reshape(-1, 1)))).shuffle(10000).batch(32).prefetch(1)
 
         inputs = tf.keras.Input(processed_train_X.shape[1:])
-        rebound_type = tf.keras.layers.Dense(10, activation='softmax')(inputs)
-        is_oreb = tf.keras.layers.Dense(1, activation='sigmoid')(inputs)
+        internal = tf.keras.layers.Dense(16)(inputs)
+        rebound_type = tf.keras.layers.Dense(
+            10, activation='softmax')(internal)
+        is_oreb = tf.keras.layers.Dense(1, activation='sigmoid')(internal)
 
         rebound_model = tf.keras.Model(
             inputs=inputs, outputs=[rebound_type, is_oreb])
@@ -114,8 +129,11 @@ def build_simple_rebound_model(season, random_state=432536):
 
         print("built model, now training")
         # fit data
-        history = rebound_model.fit(train_dataset, epochs=1)
+        history = rebound_model.fit(train_dataset, epochs=2)
         rebound_model.save(path)
+
+        print("evaluating")
+        print(rebound_model.evaluate(test_dataset))
 
     return preprocess, rebound_model
     # def stack_dict(inputs, fun=tf.stack):
