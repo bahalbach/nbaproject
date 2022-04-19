@@ -89,8 +89,9 @@ def load_roster_br(team_id, season_name):
         tov = int(data[24].get_text())
         pf = int(data[25].get_text())
 
-        player_data[name]['season_totals'] = [age, games, games_started, minutes_played,
-                                              pts, fg2m, fg2a, fg3m, fg3a, ftm, fta, orb, drb, ast, stl, blk, tov, pf]
+        if name in player_data:
+            player_data[name]['season_totals'] = [age, games, games_started, minutes_played,
+                                                  pts, fg2m, fg2a, fg3m, fg3a, ftm, fta, orb, drb, ast, stl, blk, tov, pf]
 
     salaries = {}
     for comment in comments:
